@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text on Photo - Customize Templates</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Text on Photo</h1>
+      <p>Choose a template and add your text</p>
+    </header>
+
+    <section id="gallery-section" class="gallery-section">
+      <h2>Choose a template</h2>
+      <div id="template-gallery" class="template-gallery"></div>
+    </section>
+
+    <section id="editor-section" class="editor-section hidden">
+      <button id="back-btn" class="back-btn">← Choose different template</button>
+      
+      <div class="editor-layout">
+        <div class="canvas-container">
+          <div id="editor-preview" class="editor-preview">
+            <img id="preview-image" class="preview-image" alt="Template">
+            <div id="text-overlay-wrapper" class="text-overlay-wrapper">
+              <div id="title-block" class="text-block" data-type="title">
+                <div class="text-content"></div>
+                <div class="resize-handle nw" data-handle="nw"></div>
+                <div class="resize-handle ne" data-handle="ne"></div>
+                <div class="resize-handle sw" data-handle="sw"></div>
+                <div class="resize-handle se" data-handle="se"></div>
+              </div>
+              <div id="author-block" class="text-block" data-type="author">
+                <div class="text-content"></div>
+                <div class="resize-handle nw" data-handle="nw"></div>
+                <div class="resize-handle ne" data-handle="ne"></div>
+                <div class="resize-handle sw" data-handle="sw"></div>
+                <div class="resize-handle se" data-handle="se"></div>
+              </div>
+              <div id="spine-title-block" class="text-block spine-text" data-type="spineTitle">
+                <canvas class="spine-canvas"></canvas>
+                <div class="resize-handle nw" data-handle="nw"></div>
+                <div class="resize-handle ne" data-handle="ne"></div>
+                <div class="resize-handle sw" data-handle="sw"></div>
+                <div class="resize-handle se" data-handle="se"></div>
+              </div>
+              <div id="spine-author-block" class="text-block spine-text" data-type="spineAuthor">
+                <canvas class="spine-canvas"></canvas>
+                <div class="resize-handle nw" data-handle="nw"></div>
+                <div class="resize-handle ne" data-handle="ne"></div>
+                <div class="resize-handle sw" data-handle="sw"></div>
+                <div class="resize-handle se" data-handle="se"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="controls-panel">
+          <div id="text-controls" class="text-controls">
+            <h3>Text Customization</h3>
+
+            <!-- ═══ FRONT COVER TITLE ═══ -->
+            <div class="control-section">
+              <h4>Cover Title</h4>
+              <div class="control-group">
+                <label>Text (Enter for new line)</label>
+                <textarea id="title-text" placeholder="e.g. JURASSIC PARK" rows="2"></textarea>
+              </div>
+              <div class="control-row-2">
+                <div class="control-group">
+                  <label>Font</label>
+                  <select id="title-font">
+                    <option value="Cinzel">Cinzel</option>
+                    <option value="Libre Baskerville">Libre Baskerville</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label>Color</label>
+                  <input type="color" id="title-color" value="#ded8ae">
+                  <span id="title-color-hex" class="val-hint">#ded8ae</span>
+                </div>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="title-bold" checked> Bold</label>
+                <label class="checkbox-label"><input type="checkbox" id="title-italic"> Italic</label>
+              </div>
+              <div class="control-group">
+                <label>Letter spacing</label>
+                <input type="range" id="title-spacing" min="-2" max="8" value="1">
+                <span id="title-spacing-value" class="val-hint">0.1em</span>
+              </div>
+              <div class="control-group">
+                <label>Effect</label>
+                <select id="title-effect">
+                  <option value="embossed">Embossed</option>
+                  <option value="debossed">Debossed</option>
+                  <option value="none">Flat</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Size</label>
+                <input type="range" id="title-size" min="6" max="200" value="36">
+                <span id="title-size-value" class="val-hint">36px</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt X</label>
+                <input type="range" id="title-tilt-x" min="-20" max="20" value="0">
+                <span id="title-tilt-x-value" class="val-hint">0°</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt Y</label>
+                <input type="range" id="title-tilt-y" min="-30" max="30" value="14">
+                <span id="title-tilt-y-value" class="val-hint">14°</span>
+              </div>
+            </div>
+
+            <!-- ═══ FRONT COVER AUTHOR ═══ -->
+            <div class="control-section">
+              <h4>Cover Author</h4>
+              <div class="control-group">
+                <label>Text (Enter for new line)</label>
+                <textarea id="author-text" placeholder="e.g. MICHAEL CRICHTON" rows="2"></textarea>
+              </div>
+              <div class="control-row-2">
+                <div class="control-group">
+                  <label>Font</label>
+                  <select id="author-font">
+                    <option value="Cinzel">Cinzel</option>
+                    <option value="Libre Baskerville">Libre Baskerville</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label>Color</label>
+                  <input type="color" id="author-color" value="#ded8ae">
+                  <span id="author-color-hex" class="val-hint">#ded8ae</span>
+                </div>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="author-bold" checked> Bold</label>
+                <label class="checkbox-label"><input type="checkbox" id="author-italic"> Italic</label>
+              </div>
+              <div class="control-group">
+                <label>Letter spacing</label>
+                <input type="range" id="author-spacing" min="-2" max="8" value="1">
+                <span id="author-spacing-value" class="val-hint">0.1em</span>
+              </div>
+              <div class="control-group">
+                <label>Effect</label>
+                <select id="author-effect">
+                  <option value="embossed">Embossed</option>
+                  <option value="debossed">Debossed</option>
+                  <option value="none">Flat</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Size</label>
+                <input type="range" id="author-size" min="6" max="150" value="24">
+                <span id="author-size-value" class="val-hint">24px</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt X</label>
+                <input type="range" id="author-tilt-x" min="-20" max="20" value="0">
+                <span id="author-tilt-x-value" class="val-hint">0°</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt Y</label>
+                <input type="range" id="author-tilt-y" min="-30" max="30" value="14">
+                <span id="author-tilt-y-value" class="val-hint">14°</span>
+              </div>
+            </div>
+
+            <!-- ═══ SPINE TITLE ═══ -->
+            <div class="control-section">
+              <h4>Spine Title</h4>
+              <div class="control-group">
+                <label>Text (Enter for new line)</label>
+                <textarea id="spine-title-text" placeholder="e.g. JURASSIC PARK" rows="2"></textarea>
+              </div>
+              <div class="control-row-2">
+                <div class="control-group">
+                  <label>Font</label>
+                  <select id="spine-title-font">
+                    <option value="Cinzel">Cinzel</option>
+                    <option value="Libre Baskerville">Libre Baskerville</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label>Color</label>
+                  <input type="color" id="spine-title-color" value="#ded8ae">
+                  <span id="spine-title-color-hex" class="val-hint">#ded8ae</span>
+                </div>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="spine-title-bold" checked> Bold</label>
+                <label class="checkbox-label"><input type="checkbox" id="spine-title-italic"> Italic</label>
+              </div>
+              <div class="control-group">
+                <label>Letter spacing</label>
+                <input type="range" id="spine-title-spacing" min="-2" max="8" value="1">
+                <span id="spine-title-spacing-value" class="val-hint">0.1em</span>
+              </div>
+              <div class="control-group">
+                <label>Effect</label>
+                <select id="spine-title-effect">
+                  <option value="embossed">Embossed</option>
+                  <option value="debossed">Debossed</option>
+                  <option value="none">Flat</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Size</label>
+                <input type="range" id="spine-title-size" min="6" max="80" value="14">
+                <span id="spine-title-size-value" class="val-hint">14px</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt X</label>
+                <input type="range" id="spine-title-tilt-x" min="-20" max="20" value="-5">
+                <span id="spine-title-tilt-x-value" class="val-hint">-5°</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt Y</label>
+                <input type="range" id="spine-title-tilt-y" min="-30" max="30" value="-15">
+                <span id="spine-title-tilt-y-value" class="val-hint">-15°</span>
+              </div>
+              <div class="control-group">
+                <label>Curve</label>
+                <input type="range" id="spine-title-curve" min="-30" max="30" value="8">
+                <span id="spine-title-curve-value" class="val-hint">8</span>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="spine-title-feather"> Feather first letter</label>
+              </div>
+              <div class="control-group">
+                <label>Feather amount</label>
+                <input type="range" id="spine-title-feather-amount" min="1" max="100" value="50">
+                <span id="spine-title-feather-amount-value" class="val-hint">50</span>
+              </div>
+            </div>
+
+            <!-- ═══ SPINE AUTHOR ═══ -->
+            <div class="control-section">
+              <h4>Spine Author</h4>
+              <div class="control-group">
+                <label>Text (Enter for new line)</label>
+                <textarea id="spine-author-text" placeholder="e.g. MICHAEL CRICHTON" rows="2"></textarea>
+              </div>
+              <div class="control-row-2">
+                <div class="control-group">
+                  <label>Font</label>
+                  <select id="spine-author-font">
+                    <option value="Cinzel">Cinzel</option>
+                    <option value="Libre Baskerville">Libre Baskerville</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label>Color</label>
+                  <input type="color" id="spine-author-color" value="#ded8ae">
+                  <span id="spine-author-color-hex" class="val-hint">#ded8ae</span>
+                </div>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="spine-author-bold" checked> Bold</label>
+                <label class="checkbox-label"><input type="checkbox" id="spine-author-italic"> Italic</label>
+              </div>
+              <div class="control-group">
+                <label>Letter spacing</label>
+                <input type="range" id="spine-author-spacing" min="-2" max="8" value="1">
+                <span id="spine-author-spacing-value" class="val-hint">0.1em</span>
+              </div>
+              <div class="control-group">
+                <label>Effect</label>
+                <select id="spine-author-effect">
+                  <option value="embossed">Embossed</option>
+                  <option value="debossed">Debossed</option>
+                  <option value="none">Flat</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Size</label>
+                <input type="range" id="spine-author-size" min="6" max="60" value="10">
+                <span id="spine-author-size-value" class="val-hint">10px</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt X</label>
+                <input type="range" id="spine-author-tilt-x" min="-20" max="20" value="-5">
+                <span id="spine-author-tilt-x-value" class="val-hint">-5°</span>
+              </div>
+              <div class="control-group">
+                <label>Tilt Y</label>
+                <input type="range" id="spine-author-tilt-y" min="-30" max="30" value="-15">
+                <span id="spine-author-tilt-y-value" class="val-hint">-15°</span>
+              </div>
+              <div class="control-group">
+                <label>Curve</label>
+                <input type="range" id="spine-author-curve" min="-30" max="30" value="8">
+                <span id="spine-author-curve-value" class="val-hint">8</span>
+              </div>
+              <div class="control-group checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" id="spine-author-feather"> Feather first letter</label>
+              </div>
+              <div class="control-group">
+                <label>Feather amount</label>
+                <input type="range" id="spine-author-feather-amount" min="1" max="100" value="50">
+                <span id="spine-author-feather-amount-value" class="val-hint">50</span>
+              </div>
+            </div>
+
+            <p class="drag-hint">Tip: Drag to move &bull; Resize handles on corners when hovering</p>
+            <button id="download-btn" class="download-btn">Download image</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <script src="templates-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
