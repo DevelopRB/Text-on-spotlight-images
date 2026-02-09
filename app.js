@@ -85,6 +85,134 @@ const authorBlock        = $('author-block');
 const spineTitleBlock    = $('spine-title-block');
 const spineAuthorBlock   = $('spine-author-block');
 const downloadBtn        = $('download-btn');
+const saveTemplateBtn    = $('save-template-btn');
+
+/* ── template storage ───────────────────────────────── */
+
+const STORAGE_KEY = 'textOnPhoto_userTemplates';
+
+function getUserTemplates() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch (e) {
+    console.error('Failed to load user templates:', e);
+    return [];
+  }
+}
+
+function saveUserTemplate(template) {
+  const templates = getUserTemplates();
+  templates.push(template);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+    return true;
+  } catch (e) {
+    console.error('Failed to save template:', e);
+    if (e.name === 'QuotaExceededError') {
+      alert('Storage limit exceeded. Please delete some saved templates.');
+    }
+    return false;
+  }
+}
+
+function deleteUserTemplate(id) {
+  const templates = getUserTemplates().filter(t => t.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+}
+
+function getAllTemplates() {
+  return [...TEMPLATES, ...getUserTemplates()];
+}
+
+function captureCurrentState() {
+  if (!currentTemplate || !previewImage.src) return null;
+
+  // Use the original template image if it's a data URL, otherwise capture current preview
+  let imageDataUrl = previewImage.src;
+  
+  // If it's not already a data URL, capture the current preview
+  if (!imageDataUrl.startsWith('data:')) {
+    if (!previewImage.complete || previewImage.naturalWidth === 0) {
+      alert('Image is still loading. Please wait a moment and try again.');
+      return null;
+    }
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = previewImage.naturalWidth || previewImage.width;
+    canvas.height = previewImage.naturalHeight || previewImage.height;
+    ctx.drawImage(previewImage, 0, 0);
+    imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  }
+
+  // Capture all settings for each block
+  const captureBlock = (type) => {
+    const s = readSettings(type);
+    let state = null;
+    if (type === 'title') state = titleState;
+    else if (type === 'author') state = authorState;
+    else if (type === 'spineTitle') state = spineTitleState;
+    else if (type === 'spineAuthor') state = spineAuthorState;
+    return {
+      settings: s,
+      state: state ? { ...state } : null
+    };
+  };
+
+  return {
+    id: 'user_' + Date.now(),
+    name: prompt('Enter a name for this template:') || `Saved Template ${new Date().toLocaleDateString()}`,
+    image: imageDataUrl,
+    isUserTemplate: true,
+    timestamp: Date.now(),
+    blocks: {
+      title: captureBlock('title'),
+      author: captureBlock('author'),
+      spineTitle: captureBlock('spineTitle'),
+      spineAuthor: captureBlock('spineAuthor')
+    }
+  };
+}
+
+function restoreTemplateState(savedTemplate) {
+  if (!savedTemplate.blocks) return;
+
+  const restoreBlock = (type, blockData) => {
+    if (!blockData || !blockData.settings || !blockData.state) return;
+    const { settings, state } = blockData;
+    const p = PREFIX[type];
+
+    // Restore all settings
+    if ($(p + '-text'))          $(p + '-text').value = settings.text || '';
+    if ($(p + '-font'))          $(p + '-font').value = settings.font || 'Cinzel';
+    if ($(p + '-color'))         $(p + '-color').value = settings.color || '#ded8ae';
+    if ($(p + '-color-hex'))     $(p + '-color-hex').textContent = settings.color || '#ded8ae';
+    if ($(p + '-bold'))          $(p + '-bold').checked = settings.bold ?? true;
+    if ($(p + '-italic'))        $(p + '-italic').checked = settings.italic ?? false;
+    if ($(p + '-spacing'))       $(p + '-spacing').value = settings.spacing ?? 1;
+    if ($(p + '-spacing-value')) $(p + '-spacing-value').textContent = ((settings.spacing ?? 1) / 10).toFixed(1) + 'em';
+    if ($(p + '-effect'))        $(p + '-effect').value = settings.effect || 'embossed';
+    if ($(p + '-size'))          $(p + '-size').value = state.fontSize;
+    if ($(p + '-size-value'))    $(p + '-size-value').textContent = state.fontSize + 'px';
+    if ($(p + '-tilt-x'))        $(p + '-tilt-x').value = state.tiltX;
+    if ($(p + '-tilt-x-value'))  $(p + '-tilt-x-value').textContent = state.tiltX + '°';
+    if ($(p + '-tilt-y'))        $(p + '-tilt-y').value = state.tiltY;
+    if ($(p + '-tilt-y-value'))  $(p + '-tilt-y-value').textContent = state.tiltY + '°';
+    if ($(p + '-curve'))         $(p + '-curve').value = settings.curve ?? 0;
+    if ($(p + '-curve-value'))   $(p + '-curve-value').textContent = String(settings.curve ?? 0);
+    if ($(p + '-feather'))              $(p + '-feather').checked = settings.feather ?? false;
+    if ($(p + '-feather-amount'))       $(p + '-feather-amount').value = settings.featherAmount ?? 50;
+    if ($(p + '-feather-amount-value')) $(p + '-feather-amount-value').textContent = String(settings.featherAmount ?? 50);
+
+    // Restore state
+    setState(type, { ...state });
+  };
+
+  restoreBlock('title', savedTemplate.blocks.title);
+  restoreBlock('author', savedTemplate.blocks.author);
+  restoreBlock('spineTitle', savedTemplate.blocks.spineTitle);
+  restoreBlock('spineAuthor', savedTemplate.blocks.spineAuthor);
+}
 
 /* ── init ────────────────────────────────────────────── */
 function init() {
@@ -93,13 +221,57 @@ function init() {
 }
 
 function renderGallery() {
-  templateGallery.innerHTML = TEMPLATES.map(t => `
-    <div class="template-card" data-id="${t.id}">
-      <img src="${t.image}" alt="${t.name}" loading="lazy"
-           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22280%22><rect fill=%22%233d3834%22 width=%22200%22 height=%22280%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%239a958c%22 font-size=%2214%22 text-anchor=%22middle%22 dy=%22.3em%22>Add image</text></svg>'">
-      <div class="template-name">${t.name}</div>
+  const allTemplates = getAllTemplates();
+  
+  // Use the exact name from template config (already set correctly)
+  const validTemplates = allTemplates.map(t => {
+    // Use the name directly from config - it's already set correctly
+    const displayName = t.name || 'Untitled Template';
+    return { ...t, displayName: displayName.trim() };
+  });
+
+  templateGallery.innerHTML = validTemplates.map(t => {
+    const name = t.displayName || t.name || 'Untitled';
+    return `
+    <div class="template-card" data-id="${t.id}" data-user="${t.isUserTemplate ? 'true' : 'false'}" data-card-id="${t.id}">
+      <img src="${t.image}" alt="${name}" loading="lazy" 
+           data-template-id="${t.id}">
+      <div class="template-name">${name}</div>
+      ${t.isUserTemplate ? `<button class="delete-template-btn" data-id="${t.id}" title="Delete template">×</button>` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  // Handle image load errors - hide cards with missing images
+  templateGallery.querySelectorAll('img').forEach(img => {
+    img.addEventListener('error', function() {
+      const card = this.closest('.template-card');
+      if (card) {
+        card.style.display = 'none';
+      }
+    });
+    
+    // Also check if image is already broken
+    if (!img.complete || img.naturalWidth === 0) {
+      img.addEventListener('load', function() {
+        // Image loaded successfully, ensure card is visible
+        const card = this.closest('.template-card');
+        if (card) card.style.display = '';
+      });
+    }
+  });
+
+  // Add delete handlers for user templates
+  templateGallery.querySelectorAll('.delete-template-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (confirm('Delete this saved template?')) {
+        deleteUserTemplate(id);
+        renderGallery();
+      }
+    });
+  });
 }
 
 /* ── events ──────────────────────────────────────────── */
@@ -144,6 +316,26 @@ function bindEvents() {
   });
 
   downloadBtn.addEventListener('click', downloadImage);
+
+  saveTemplateBtn.addEventListener('click', () => {
+    if (!currentTemplate || !previewImage.src) {
+      alert('Please select a template and add some text first.');
+      return;
+    }
+
+    const saved = captureCurrentState();
+    if (!saved) {
+      alert('Failed to capture current state. Please try again.');
+      return;
+    }
+
+    if (saveUserTemplate(saved)) {
+      alert(`Template "${saved.name}" saved successfully!`);
+      renderGallery(); // Refresh gallery to show new template
+    } else {
+      alert('Failed to save template. Storage may be full.');
+    }
+  });
 
   /* Drag — on block body (not handles) */
   [titleBlock, authorBlock, spineTitleBlock, spineAuthorBlock].filter(Boolean).forEach(b => {
@@ -434,8 +626,10 @@ function endPointer() {
 /* ── template selection ──────────────────────────────── */
 
 function selectTemplate(id) {
-  const template = TEMPLATES.find(t => t.id === id);
+  const allTemplates = getAllTemplates();
+  const template = allTemplates.find(t => t.id === id);
   if (!template) return;
+
   currentTemplate = template;
   templateImage   = new Image();
 
@@ -445,19 +639,29 @@ function selectTemplate(id) {
     gallerySection.classList.add('hidden');
     editorSection.classList.remove('hidden');
 
-    const r = template.regions;
-    const defTiltX = template.tiltX ?? -3, defTiltY = template.tiltY ?? -12;
-    const spTiltX = -5, spTiltY = -15;
+    if (template.isUserTemplate && template.blocks) {
+      // User template: restore all saved settings
+      titleState       = template.blocks.title?.state       || null;
+      authorState      = template.blocks.author?.state      || null;
+      spineTitleState  = template.blocks.spineTitle?.state  || null;
+      spineAuthorState = template.blocks.spineAuthor?.state || null;
+      restoreTemplateState(template);
+    } else {
+      // System template: use default regions
+      const r = template.regions;
+      const defTiltX = template.tiltX ?? -3, defTiltY = template.tiltY ?? -12;
+      const spTiltX = -5, spTiltY = -15;
 
-    titleState       = { left: r.title.left, top: r.title.top, width: r.title.width, height: r.title.height, fontSize: 36, tiltX: defTiltX, tiltY: defTiltY };
-    authorState      = { left: r.author.left, top: r.author.top, width: r.author.width, height: r.author.height, fontSize: 24, tiltX: defTiltX, tiltY: defTiltY };
-    spineTitleState  = r.spineTitle  ? { left: r.spineTitle.left, top: r.spineTitle.top, width: r.spineTitle.width, height: r.spineTitle.height, fontSize: 14, tiltX: spTiltX, tiltY: spTiltY } : null;
-    spineAuthorState = r.spineAuthor ? { left: r.spineAuthor.left, top: r.spineAuthor.top, width: r.spineAuthor.width, height: r.spineAuthor.height, fontSize: 10, tiltX: spTiltX, tiltY: spTiltY } : null;
+      titleState       = { left: r.title.left, top: r.title.top, width: r.title.width, height: r.title.height, fontSize: 36, tiltX: defTiltX, tiltY: defTiltY };
+      authorState      = { left: r.author.left, top: r.author.top, width: r.author.width, height: r.author.height, fontSize: 24, tiltX: defTiltX, tiltY: defTiltY };
+      spineTitleState  = r.spineTitle  ? { left: r.spineTitle.left, top: r.spineTitle.top, width: r.spineTitle.width, height: r.spineTitle.height, fontSize: 14, tiltX: spTiltX, tiltY: spTiltY } : null;
+      spineAuthorState = r.spineAuthor ? { left: r.spineAuthor.left, top: r.spineAuthor.top, width: r.spineAuthor.width, height: r.spineAuthor.height, fontSize: 10, tiltX: spTiltX, tiltY: spTiltY } : null;
 
-    resetControls('title',       { text:'', size:36, tiltX:defTiltX, tiltY:defTiltY });
-    resetControls('author',      { text:'', size:24, tiltX:defTiltX, tiltY:defTiltY });
-    resetControls('spineTitle',  { text:'', size:14, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
-    resetControls('spineAuthor', { text:'', size:10, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+      resetControls('title',       { text:'', size:36, tiltX:defTiltX, tiltY:defTiltY });
+      resetControls('author',      { text:'', size:24, tiltX:defTiltX, tiltY:defTiltY });
+      resetControls('spineTitle',  { text:'', size:14, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+      resetControls('spineAuthor', { text:'', size:10, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+    }
 
     previewImage.src = template.image;
     updateOverlays();
