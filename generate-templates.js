@@ -10,9 +10,10 @@ const templatesDir = path.join(__dirname, 'templates');
 const configFile = path.join(__dirname, 'templates-config.js');
 
 // Default regions for all templates (can be customized per template later)
+// Narrower, centered boxes to match current app defaults
 const defaultRegions = {
-  title: { left: 15, top: 28, width: 70, height: 22 },
-  author: { left: 15, top: 52, width: 70, height: 18 },
+  title: { left: 22, top: 28, width: 56, height: 22 },
+  author: { left: 22, top: 52, width: 56, height: 18 },
   spineTitle: { left: 2, top: 20, width: 12, height: 28 },
   spineAuthor: { left: 2, top: 52, width: 12, height: 24 }
 };
@@ -129,7 +130,8 @@ try {
  * 
  * Text regions are defined as percentages of the image dimensions (0-100)
  */
-const TEMPLATES = ${JSON.stringify(templates, null, 2)};
+// Ensure TEMPLATES is in global scope for Electron compatibility
+var TEMPLATES = window.TEMPLATES = ${JSON.stringify(templates, null, 2)};
 `;
 
   // Write to file

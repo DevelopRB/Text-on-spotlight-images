@@ -19,7 +19,18 @@
 
     <section id="gallery-section" class="gallery-section">
       <h2>Choose a template</h2>
-      <div id="template-gallery" class="template-gallery"></div>
+      <div id="default-templates-section">
+        <h3 class="section-title">Default Templates</h3>
+        <h4 class="section-subtitle">Front</h4>
+        <div id="default-front-gallery" class="template-gallery"></div>
+        <h4 class="section-subtitle">Spine</h4>
+        <div id="default-spine-gallery" class="template-gallery"></div>
+      </div>
+      <div id="saved-templates-section">
+        <h3 class="section-title">My Saved Templates</h3>
+        <div id="saved-template-gallery" class="template-gallery"></div>
+        <p id="no-saved-templates" class="no-templates-message" style="display: none;">No saved templates yet. Create and save a template to see it here.</p>
+      </div>
     </section>
 
     <section id="editor-section" class="editor-section hidden">
@@ -27,6 +38,12 @@
       
       <div class="editor-layout">
         <div class="canvas-container">
+          <div class="zoom-controls">
+            <button id="zoom-out-btn" class="zoom-btn" title="Zoom Out">−</button>
+            <span id="zoom-level" class="zoom-level">100%</span>
+            <button id="zoom-in-btn" class="zoom-btn" title="Zoom In">+</button>
+            <button id="zoom-reset-btn" class="zoom-reset-btn" title="Reset Zoom">Reset</button>
+          </div>
           <div id="editor-preview" class="editor-preview">
             <img id="preview-image" class="preview-image" alt="Template">
             <div id="text-overlay-wrapper" class="text-overlay-wrapper">
@@ -36,6 +53,7 @@
                 <div class="resize-handle ne" data-handle="ne"></div>
                 <div class="resize-handle sw" data-handle="sw"></div>
                 <div class="resize-handle se" data-handle="se"></div>
+                <div class="rotate-handle" data-handle="rotate"></div>
               </div>
               <div id="author-block" class="text-block" data-type="author">
                 <div class="text-content"></div>
@@ -43,13 +61,20 @@
                 <div class="resize-handle ne" data-handle="ne"></div>
                 <div class="resize-handle sw" data-handle="sw"></div>
                 <div class="resize-handle se" data-handle="se"></div>
+                <div class="rotate-handle" data-handle="rotate"></div>
               </div>
+            </div>
+          </div>
+          <div id="spine-image-preview" class="editor-preview spine-only-preview">
+            <img id="spine-preview-image" class="preview-image" alt="Spine Template">
+            <div id="spine-overlay-wrapper" class="text-overlay-wrapper">
               <div id="spine-title-block" class="text-block spine-text" data-type="spineTitle">
                 <canvas class="spine-canvas"></canvas>
                 <div class="resize-handle nw" data-handle="nw"></div>
                 <div class="resize-handle ne" data-handle="ne"></div>
                 <div class="resize-handle sw" data-handle="sw"></div>
                 <div class="resize-handle se" data-handle="se"></div>
+                <div class="rotate-handle" data-handle="rotate"></div>
               </div>
               <div id="spine-author-block" class="text-block spine-text" data-type="spineAuthor">
                 <canvas class="spine-canvas"></canvas>
@@ -57,6 +82,7 @@
                 <div class="resize-handle ne" data-handle="ne"></div>
                 <div class="resize-handle sw" data-handle="sw"></div>
                 <div class="resize-handle se" data-handle="se"></div>
+                <div class="rotate-handle" data-handle="rotate"></div>
               </div>
             </div>
           </div>
@@ -75,15 +101,6 @@
               </div>
               <div class="control-row-2">
                 <div class="control-group">
-                  <label>Font</label>
-                  <select id="title-font">
-                    <option value="Cinzel">Cinzel</option>
-                    <option value="Libre Baskerville">Libre Baskerville</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Times New Roman">Times New Roman</option>
-                  </select>
-                </div>
-                <div class="control-group">
                   <label>Color</label>
                   <input type="color" id="title-color" value="#ded8ae">
                   <span id="title-color-hex" class="val-hint">#ded8ae</span>
@@ -95,31 +112,26 @@
               </div>
               <div class="control-group">
                 <label>Letter spacing</label>
-                <input type="range" id="title-spacing" min="-2" max="8" value="1">
-                <span id="title-spacing-value" class="val-hint">0.1em</span>
+                <input type="range" id="title-spacing" min="-2" max="8" value="0">
+                <span id="title-spacing-value" class="val-hint">0.0em</span>
               </div>
               <div class="control-group">
-                <label>Effect</label>
-                <select id="title-effect">
-                  <option value="embossed">Embossed</option>
-                  <option value="debossed">Debossed</option>
-                  <option value="none">Flat</option>
+                <label>Line spacing</label>
+                <input type="range" id="title-line-spacing" min="8" max="25" value="9">
+                <span id="title-line-spacing-value" class="val-hint">0.9</span>
+              </div>
+              <div class="control-group">
+                <label>Text alignment</label>
+                <select id="title-alignment">
+                  <option value="left">Left</option>
+                  <option value="center" selected>Center</option>
+                  <option value="right">Right</option>
                 </select>
               </div>
               <div class="control-group">
                 <label>Size</label>
                 <input type="range" id="title-size" min="6" max="200" value="36">
                 <span id="title-size-value" class="val-hint">36px</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt X</label>
-                <input type="range" id="title-tilt-x" min="-20" max="20" value="0">
-                <span id="title-tilt-x-value" class="val-hint">0°</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt Y</label>
-                <input type="range" id="title-tilt-y" min="-30" max="30" value="14">
-                <span id="title-tilt-y-value" class="val-hint">14°</span>
               </div>
             </div>
 
@@ -132,15 +144,6 @@
               </div>
               <div class="control-row-2">
                 <div class="control-group">
-                  <label>Font</label>
-                  <select id="author-font">
-                    <option value="Cinzel">Cinzel</option>
-                    <option value="Libre Baskerville">Libre Baskerville</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Times New Roman">Times New Roman</option>
-                  </select>
-                </div>
-                <div class="control-group">
                   <label>Color</label>
                   <input type="color" id="author-color" value="#ded8ae">
                   <span id="author-color-hex" class="val-hint">#ded8ae</span>
@@ -152,31 +155,26 @@
               </div>
               <div class="control-group">
                 <label>Letter spacing</label>
-                <input type="range" id="author-spacing" min="-2" max="8" value="1">
-                <span id="author-spacing-value" class="val-hint">0.1em</span>
+                <input type="range" id="author-spacing" min="-2" max="8" value="0">
+                <span id="author-spacing-value" class="val-hint">0.0em</span>
               </div>
               <div class="control-group">
-                <label>Effect</label>
-                <select id="author-effect">
-                  <option value="embossed">Embossed</option>
-                  <option value="debossed">Debossed</option>
-                  <option value="none">Flat</option>
+                <label>Line spacing</label>
+                <input type="range" id="author-line-spacing" min="8" max="25" value="9">
+                <span id="author-line-spacing-value" class="val-hint">0.9</span>
+              </div>
+              <div class="control-group">
+                <label>Text alignment</label>
+                <select id="author-alignment">
+                  <option value="left">Left</option>
+                  <option value="center" selected>Center</option>
+                  <option value="right">Right</option>
                 </select>
               </div>
               <div class="control-group">
                 <label>Size</label>
                 <input type="range" id="author-size" min="6" max="150" value="24">
                 <span id="author-size-value" class="val-hint">24px</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt X</label>
-                <input type="range" id="author-tilt-x" min="-20" max="20" value="0">
-                <span id="author-tilt-x-value" class="val-hint">0°</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt Y</label>
-                <input type="range" id="author-tilt-y" min="-30" max="30" value="14">
-                <span id="author-tilt-y-value" class="val-hint">14°</span>
               </div>
             </div>
 
@@ -189,15 +187,6 @@
               </div>
               <div class="control-row-2">
                 <div class="control-group">
-                  <label>Font</label>
-                  <select id="spine-title-font">
-                    <option value="Cinzel">Cinzel</option>
-                    <option value="Libre Baskerville">Libre Baskerville</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Times New Roman">Times New Roman</option>
-                  </select>
-                </div>
-                <div class="control-group">
                   <label>Color</label>
                   <input type="color" id="spine-title-color" value="#ded8ae">
                   <span id="spine-title-color-hex" class="val-hint">#ded8ae</span>
@@ -209,44 +198,26 @@
               </div>
               <div class="control-group">
                 <label>Letter spacing</label>
-                <input type="range" id="spine-title-spacing" min="-2" max="8" value="1">
-                <span id="spine-title-spacing-value" class="val-hint">0.1em</span>
+                <input type="range" id="spine-title-spacing" min="-2" max="8" value="0">
+                <span id="spine-title-spacing-value" class="val-hint">0.0em</span>
               </div>
               <div class="control-group">
-                <label>Effect</label>
-                <select id="spine-title-effect">
-                  <option value="embossed">Embossed</option>
-                  <option value="debossed">Debossed</option>
-                  <option value="none">Flat</option>
+                <label>Line spacing</label>
+                <input type="range" id="spine-title-line-spacing" min="8" max="25" value="9">
+                <span id="spine-title-line-spacing-value" class="val-hint">0.9</span>
+              </div>
+              <div class="control-group">
+                <label>Text alignment</label>
+                <select id="spine-title-alignment">
+                  <option value="left">Left</option>
+                  <option value="center" selected>Center</option>
+                  <option value="right">Right</option>
                 </select>
               </div>
               <div class="control-group">
                 <label>Size</label>
                 <input type="range" id="spine-title-size" min="6" max="80" value="14">
                 <span id="spine-title-size-value" class="val-hint">14px</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt X</label>
-                <input type="range" id="spine-title-tilt-x" min="-20" max="20" value="-5">
-                <span id="spine-title-tilt-x-value" class="val-hint">-5°</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt Y</label>
-                <input type="range" id="spine-title-tilt-y" min="-30" max="30" value="-15">
-                <span id="spine-title-tilt-y-value" class="val-hint">-15°</span>
-              </div>
-              <div class="control-group">
-                <label>Curve</label>
-                <input type="range" id="spine-title-curve" min="-30" max="30" value="8">
-                <span id="spine-title-curve-value" class="val-hint">8</span>
-              </div>
-              <div class="control-group checkbox-row">
-                <label class="checkbox-label"><input type="checkbox" id="spine-title-feather"> Feather first letter</label>
-              </div>
-              <div class="control-group">
-                <label>Feather amount</label>
-                <input type="range" id="spine-title-feather-amount" min="1" max="100" value="50">
-                <span id="spine-title-feather-amount-value" class="val-hint">50</span>
               </div>
             </div>
 
@@ -259,15 +230,6 @@
               </div>
               <div class="control-row-2">
                 <div class="control-group">
-                  <label>Font</label>
-                  <select id="spine-author-font">
-                    <option value="Cinzel">Cinzel</option>
-                    <option value="Libre Baskerville">Libre Baskerville</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Times New Roman">Times New Roman</option>
-                  </select>
-                </div>
-                <div class="control-group">
                   <label>Color</label>
                   <input type="color" id="spine-author-color" value="#ded8ae">
                   <span id="spine-author-color-hex" class="val-hint">#ded8ae</span>
@@ -279,44 +241,26 @@
               </div>
               <div class="control-group">
                 <label>Letter spacing</label>
-                <input type="range" id="spine-author-spacing" min="-2" max="8" value="1">
-                <span id="spine-author-spacing-value" class="val-hint">0.1em</span>
+                <input type="range" id="spine-author-spacing" min="-2" max="8" value="0">
+                <span id="spine-author-spacing-value" class="val-hint">0.0em</span>
               </div>
               <div class="control-group">
-                <label>Effect</label>
-                <select id="spine-author-effect">
-                  <option value="embossed">Flat</option>
-                  <option value="debossed">Debossed</option>
-                  <option value="none">Embossed</option>
+                <label>Line spacing</label>
+                <input type="range" id="spine-author-line-spacing" min="8" max="25" value="9">
+                <span id="spine-author-line-spacing-value" class="val-hint">0.9</span>
+              </div>
+              <div class="control-group">
+                <label>Text alignment</label>
+                <select id="spine-author-alignment">
+                  <option value="left">Left</option>
+                  <option value="center" selected>Center</option>
+                  <option value="right">Right</option>
                 </select>
               </div>
               <div class="control-group">
                 <label>Size</label>
                 <input type="range" id="spine-author-size" min="6" max="60" value="10">
                 <span id="spine-author-size-value" class="val-hint">10px</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt X</label>
-                <input type="range" id="spine-author-tilt-x" min="-20" max="20" value="-5">
-                <span id="spine-author-tilt-x-value" class="val-hint">-5°</span>
-              </div>
-              <div class="control-group">
-                <label>Tilt Y</label>
-                <input type="range" id="spine-author-tilt-y" min="-30" max="30" value="-15">
-                <span id="spine-author-tilt-y-value" class="val-hint">-15°</span>
-              </div>
-              <div class="control-group">
-                <label>Curve</label>
-                <input type="range" id="spine-author-curve" min="-30" max="30" value="8">
-                <span id="spine-author-curve-value" class="val-hint">8</span>
-              </div>
-              <div class="control-group checkbox-row">
-                <label class="checkbox-label"><input type="checkbox" id="spine-author-feather"> Feather first letter</label>
-              </div>
-              <div class="control-group">
-                <label>Feather amount</label>
-                <input type="range" id="spine-author-feather-amount" min="1" max="100" value="50">
-                <span id="spine-author-feather-amount-value" class="val-hint">50</span>
               </div>
             </div>
 
@@ -329,7 +273,29 @@
     </section>
   </div>
 
+  <!-- Template Name Input Modal -->
+  <div id="template-name-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h3>Save Template</h3>
+      <p>Enter a name for this template:</p>
+      <input type="text" id="template-name-input" placeholder="Template name" maxlength="50">
+      <div class="modal-buttons">
+        <button id="template-name-cancel" class="modal-btn-cancel">Cancel</button>
+        <button id="template-name-save" class="modal-btn-save">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script src="templates-config.js"></script>
+  <script>
+    // Verify TEMPLATES is loaded before app.js runs
+    console.log('templates-config.js loaded');
+    console.log('TEMPLATES defined:', typeof TEMPLATES !== 'undefined');
+    console.log('window.TEMPLATES defined:', typeof window !== 'undefined' && typeof window.TEMPLATES !== 'undefined');
+    if (typeof TEMPLATES !== 'undefined') {
+      console.log('TEMPLATES count:', TEMPLATES.length);
+    }
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -20,18 +20,26 @@ const PREFIX = {
 /** Read every control value for a block by its type key. */
 function readSettings(type) {
   const p = PREFIX[type];
+  const textEl = document.getElementById(p + '-text');
+
+  let rawText = (textEl && textEl.value || '')
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n');
+
   return {
-    text:    ($(p + '-text')?.value || '').trim().toUpperCase()
-                .replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
-    font:    $(p + '-font')?.value    || 'Cinzel',
+    text: rawText, // ✅ DO NOT modify case here
+    font:    'Times New Roman',
     color:   $(p + '-color')?.value   || '#ded8ae',
     bold:    $(p + '-bold')?.checked  ?? true,
     italic:  $(p + '-italic')?.checked ?? false,
-    spacing: parseInt($(p + '-spacing')?.value ?? 1),
-    effect:  $(p + '-effect')?.value  || 'embossed',
-    curve:         parseInt($(p + '-curve')?.value ?? 0),
-    feather:       $(p + '-feather')?.checked ?? false,
-    featherAmount: parseInt($(p + '-feather-amount')?.value ?? 50)
+    spacing: parseInt($(p + '-spacing')?.value ?? 0),
+    lineSpacing: parseInt($(p + '-line-spacing')?.value ?? 9),
+    alignment: ($(p + '-alignment')?.value || 'center'),
+    effect:  'none',
+    // Curve/feather disabled: keep flat spine text with no feathering
+    curve:         0,
+    feather:       false,
+    featherAmount: 50
   };
 }
 
@@ -40,15 +48,16 @@ function resetControls(type, defs) {
   const p = PREFIX[type];
   const el = s => $(p + '-' + s);
   if (el('text'))          el('text').value      = defs.text || '';
-  if (el('font'))          el('font').value      = defs.font || 'Cinzel';
   if (el('color'))         el('color').value     = defs.color || '#ded8ae';
   if (el('color-hex'))     el('color-hex').textContent = defs.color || '#ded8ae';
   if (el('bold'))          el('bold').checked    = defs.bold ?? true;
   if (el('italic'))        el('italic').checked  = defs.italic ?? false;
-  if (el('spacing'))       el('spacing').value   = defs.spacing ?? 1;
-  if (el('spacing-value')) el('spacing-value').textContent = ((defs.spacing ?? 1) / 10).toFixed(1) + 'em';
-  if (el('effect'))        el('effect').value    = defs.effect || 'embossed';
-  if (el('size'))          el('size').value      = defs.size;
+  if (el('spacing'))           el('spacing').value   = defs.spacing ?? 0;
+  if (el('spacing-value'))     el('spacing-value').textContent = ((defs.spacing ?? 0) / 10).toFixed(1) + 'em';
+  if (el('line-spacing'))      el('line-spacing').value = defs.lineSpacing ?? 9;
+  if (el('line-spacing-value')) el('line-spacing-value').textContent = ((defs.lineSpacing ?? 9) / 10).toFixed(1);
+  if (el('alignment'))      el('alignment').value = defs.alignment || 'center';
+  if (el('size'))           el('size').value     = defs.size;
   if (el('size-value'))    el('size-value').textContent = defs.size + 'px';
   if (el('tilt-x'))        el('tilt-x').value    = defs.tiltX;
   if (el('tilt-x-value'))  el('tilt-x-value').textContent = defs.tiltX + '°';
@@ -67,111 +76,322 @@ let templateImage   = null;
 
 let dragTarget = null, dragOffset = { x: 0, y: 0 }, dragRaf = null;
 let resizeTarget = null, resizeHandle = null, resizeStart = null, resizeRaf = null;
+let rotateTarget = null, rotateStart = null, rotateRaf = null;
 
 let titleState       = null;
 let authorState      = null;
 let spineTitleState  = null;
 let spineAuthorState = null;
 
+let zoomLevel = 1.0; // 1.0 = 100%
+
 /* ── DOM (preview / gallery — never change) ────────── */
-const gallerySection     = $('gallery-section');
-const editorSection      = $('editor-section');
-const templateGallery    = $('template-gallery');
-const backBtn            = $('back-btn');
+const gallerySection         = $('gallery-section');
+const editorSection          = $('editor-section');
+const templateGallery        = $('template-gallery'); // Legacy - will be replaced
+const defaultFrontGallery    = $('default-front-gallery');
+const defaultSpineGallery    = $('default-spine-gallery');
+const savedTemplateGallery   = $('saved-template-gallery');
+const noSavedTemplatesMsg    = $('no-saved-templates');
+const backBtn               = $('back-btn');
+
+// Debug: Check if elements exist
+if (!savedTemplateGallery) {
+  console.error('saved-template-gallery element not found!');
+}
 const editorPreview      = $('editor-preview');
 const previewImage       = $('preview-image');
+const spineImagePreview  = $('spine-image-preview');
+const spinePreviewImage  = $('spine-preview-image');
 const titleBlock         = $('title-block');
 const authorBlock        = $('author-block');
 const spineTitleBlock    = $('spine-title-block');
 const spineAuthorBlock   = $('spine-author-block');
 const downloadBtn        = $('download-btn');
 const saveTemplateBtn    = $('save-template-btn');
+const zoomInBtn          = $('zoom-in-btn');
+const zoomOutBtn         = $('zoom-out-btn');
+const zoomResetBtn       = $('zoom-reset-btn');
+const zoomLevelDisplay   = $('zoom-level');
 
 /* ── template storage ───────────────────────────────── */
 
-const STORAGE_KEY = 'textOnPhoto_userTemplates';
+// File-based template storage using Electron IPC
+let savedTemplatesCache = [];
 
-function getUserTemplates() {
+async function getUserTemplates() {
   try {
+    // Use Electron IPC if available, otherwise fallback to localStorage
+    if (typeof require !== 'undefined' && require('electron')) {
+      const { ipcRenderer } = require('electron');
+      const result = await ipcRenderer.invoke('load-templates');
+      if (result.success) {
+        savedTemplatesCache = result.templates;
+        console.log('Loaded templates from My templates folder:', result.templates.length);
+        return result.templates.filter(t => t && t.id && t.image);
+      }
+    }
+    
+    // Fallback to localStorage for browser compatibility
+    const STORAGE_KEY = 'textOnPhoto_userTemplates';
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    if (stored) {
+      const templates = JSON.parse(stored);
+      return templates.filter(t => t && t.id && t.image);
+    }
+    return [];
   } catch (e) {
     console.error('Failed to load user templates:', e);
     return [];
   }
 }
 
-function saveUserTemplate(template) {
-  const templates = getUserTemplates();
-  templates.push(template);
+async function saveUserTemplate(template) {
+  // Validate template before saving
+  if (!template || !template.id || !template.image) {
+    console.error('Invalid template structure:', template);
+    alert('Template structure is invalid. Cannot save.');
+    return false;
+  }
+  
   try {
+    // Use Electron IPC if available
+    if (typeof require !== 'undefined' && require('electron')) {
+      const { ipcRenderer } = require('electron');
+      const result = await ipcRenderer.invoke('save-template', template);
+      if (result.success) {
+        console.log('Template saved to My templates folder:', result.filename);
+        savedTemplatesCache.push(template);
+        return true;
+      } else {
+        alert('Failed to save template: ' + (result.error || 'Unknown error'));
+        return false;
+      }
+    }
+    
+    // Fallback to localStorage
+    const STORAGE_KEY = 'textOnPhoto_userTemplates';
+    const templates = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    templates.push(template);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+    console.log('Template saved to localStorage (fallback)');
     return true;
   } catch (e) {
     console.error('Failed to save template:', e);
-    if (e.name === 'QuotaExceededError') {
-      alert('Storage limit exceeded. Please delete some saved templates.');
-    }
+    alert('Failed to save template: ' + e.message);
     return false;
   }
 }
 
-function deleteUserTemplate(id) {
-  const templates = getUserTemplates().filter(t => t.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+async function addNewTemplate() {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Add new template is only available in the desktop app.');
+      return;
+    }
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('add-new-template');
+    if (result.cancelled) return;
+    if (!result.success) {
+      alert('Failed to add template: ' + (result.error || 'Unknown error'));
+      return;
+    }
+    if (result.template) {
+      savedTemplatesCache.push(result.template);
+      await renderGallery();
+      await selectTemplate(result.template.id);
+    }
+  } catch (e) {
+    console.error('Add new template:', e);
+    alert('Failed to add template: ' + (e.message || 'Unknown error'));
+  }
 }
 
-function getAllTemplates() {
-  return [...TEMPLATES, ...getUserTemplates()];
+async function deleteUserTemplate(id) {
+  try {
+    // Use Electron IPC if available
+    if (typeof require !== 'undefined' && require('electron')) {
+      const { ipcRenderer } = require('electron');
+      const result = await ipcRenderer.invoke('delete-template', id);
+      if (result.success) {
+        savedTemplatesCache = savedTemplatesCache.filter(t => t.id !== id);
+        console.log('Template deleted from My templates folder');
+        return true;
+      }
+    }
+    
+    // Fallback to localStorage
+    const STORAGE_KEY = 'textOnPhoto_userTemplates';
+    const templates = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(templates.filter(t => t.id !== id)));
+    return true;
+  } catch (e) {
+    console.error('Failed to delete template:', e);
+    return false;
+  }
+}
+
+async function getAllTemplates() {
+  const defaultTemplates = (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) 
+    ? TEMPLATES 
+    : (typeof window !== 'undefined' && window.TEMPLATES && Array.isArray(window.TEMPLATES))
+      ? window.TEMPLATES
+      : [];
+  const savedTemplates = await getUserTemplates();
+  return [...defaultTemplates, ...savedTemplates];
 }
 
 function captureCurrentState() {
-  if (!currentTemplate || !previewImage.src) return null;
-
-  // Use the original template image if it's a data URL, otherwise capture current preview
-  let imageDataUrl = previewImage.src;
-  
-  // If it's not already a data URL, capture the current preview
-  if (!imageDataUrl.startsWith('data:')) {
-    if (!previewImage.complete || previewImage.naturalWidth === 0) {
-      alert('Image is still loading. Please wait a moment and try again.');
-      return null;
-    }
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = previewImage.naturalWidth || previewImage.width;
-    canvas.height = previewImage.naturalHeight || previewImage.height;
-    ctx.drawImage(previewImage, 0, 0);
-    imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  if (!currentTemplate || !previewImage.src) {
+    return Promise.resolve(null);
   }
 
-  // Capture all settings for each block
-  const captureBlock = (type) => {
-    const s = readSettings(type);
-    let state = null;
-    if (type === 'title') state = titleState;
-    else if (type === 'author') state = authorState;
-    else if (type === 'spineTitle') state = spineTitleState;
-    else if (type === 'spineAuthor') state = spineAuthorState;
-    return {
-      settings: s,
-      state: state ? { ...state } : null
-    };
-  };
+  // Check if html2canvas is available
+  if (typeof html2canvas === 'undefined') {
+    alert('html2canvas library is not loaded. Cannot capture preview.');
+    return Promise.resolve(null);
+  }
 
-  return {
-    id: 'user_' + Date.now(),
-    name: prompt('Enter a name for this template:') || `Saved Template ${new Date().toLocaleDateString()}`,
-    image: imageDataUrl,
-    isUserTemplate: true,
-    timestamp: Date.now(),
-    blocks: {
-      title: captureBlock('title'),
-      author: captureBlock('author'),
-      spineTitle: captureBlock('spineTitle'),
-      spineAuthor: captureBlock('spineAuthor')
-    }
-  };
+  // Check if preview image is loaded
+  if (!previewImage.complete || previewImage.naturalWidth === 0) {
+    alert('Image is still loading. Please wait a moment and try again.');
+    return Promise.resolve(null);
+  }
+
+  // Hide resize handles temporarily for clean capture
+  const handles = document.querySelectorAll('.resize-handle');
+  const originalOpacities = Array.from(handles).map(h => h.style.opacity);
+  handles.forEach(h => { h.style.opacity = '0'; });
+
+  // Store original zoom transform
+  const originalTransform = editorPreview.style.transform;
+  
+  // Temporarily reset zoom for capture
+  editorPreview.style.transform = 'scale(1)';
+
+  // Use html2canvas to capture the entire preview with text overlays
+  return new Promise((resolve) => {
+    // Wait a bit for transform to apply and ensure fonts are loaded
+    setTimeout(() => {
+      // Ensure element is visible and has dimensions
+      if (editorPreview.offsetWidth === 0 || editorPreview.offsetHeight === 0) {
+        editorPreview.style.transform = originalTransform;
+        handles.forEach((h, i) => { h.style.opacity = originalOpacities[i] || ''; });
+        alert('Preview element is not visible. Please ensure the editor is displayed.');
+        resolve(null);
+        return;
+      }
+
+      // Wait for fonts to load
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+          performCapture();
+        }).catch(() => {
+          // If fonts.ready fails, proceed anyway
+          performCapture();
+        });
+      } else {
+        performCapture();
+      }
+
+      async function performCapture() {
+        try {
+          const canvas = await html2canvas(editorPreview, {
+            useCORS: true,
+            allowTaint: true,
+            scale: 2,
+            backgroundColor: null,
+            logging: false,
+            onclone: (clonedDoc) => {
+              const clonedPreview = clonedDoc.getElementById('editor-preview');
+              if (clonedPreview) {
+                clonedPreview.style.transform = 'scale(1)';
+                // Hide text overlays so saved image has no baked-in text;
+                // when user loads template, only the overlay shows their input
+                const overlay = clonedPreview.querySelector('.text-overlay-wrapper');
+                if (overlay) overlay.style.display = 'none';
+              }
+            }
+          });
+
+          // Restore zoom transform
+          editorPreview.style.transform = originalTransform;
+          
+          // Restore resize handles
+          handles.forEach((h, i) => { h.style.opacity = originalOpacities[i] || ''; });
+
+          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          const frontBgImage = previewImage.src || '';
+          const spineBgImage = (typeof spinePreviewImage !== 'undefined' && spinePreviewImage && spinePreviewImage.src) ? spinePreviewImage.src : '';
+
+          // Capture all settings for each block
+          const captureBlock = (type) => {
+            const p = PREFIX[type];
+            const s = readSettings(type);
+            let state = null;
+            if (type === 'title') state = titleState;
+            else if (type === 'author') state = authorState;
+            else if (type === 'spineTitle') state = spineTitleState;
+            else if (type === 'spineAuthor') state = spineAuthorState;
+            return {
+              settings: s,
+              state: state ? { ...state } : null
+            };
+          };
+
+          // Show custom modal for template name
+          const templateName = await showTemplateNameDialog();
+          if (!templateName) {
+            // User cancelled
+            resolve(null);
+            return;
+          }
+
+          const template = {
+            id: 'user_' + Date.now(),
+            name: templateName.trim() || `Saved Template ${new Date().toLocaleDateString()}`,
+            image: imageDataUrl,        // thumbnail / preview of front
+            frontImage: frontBgImage,   // actual front background image
+            spineImage: spineBgImage,   // actual spine background image (if any)
+            isUserTemplate: true,
+            timestamp: Date.now(),
+            blocks: {
+              title: captureBlock('title'),
+              author: captureBlock('author'),
+              spineTitle: captureBlock('spineTitle'),
+              spineAuthor: captureBlock('spineAuthor')
+            }
+          };
+
+          console.log('Template captured:', {
+            id: template.id,
+            name: template.name,
+            imageLength: template.image ? template.image.length : 0,
+            imageType: template.image ? template.image.substring(0, 50) : 'none',
+            hasBlocks: !!template.blocks
+          });
+
+          resolve(template);
+        } catch (err) {
+          // Restore zoom transform on error
+          editorPreview.style.transform = originalTransform;
+          
+          // Restore resize handles on error
+          handles.forEach((h, i) => { h.style.opacity = originalOpacities[i] || ''; });
+          console.error('Failed to capture preview:', err);
+          console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            previewElement: editorPreview,
+            previewVisible: editorPreview.offsetWidth > 0 && editorPreview.offsetHeight > 0,
+            imageLoaded: previewImage.complete && previewImage.naturalWidth > 0
+          });
+          alert('Failed to capture preview: ' + (err.message || 'Unknown error') + '. Please ensure the preview is visible and try again.');
+          resolve(null);
+        }
+      }
+    }, 200); // Small delay to ensure transform is applied
+  });
 }
 
 function restoreTemplateState(savedTemplate) {
@@ -183,16 +403,18 @@ function restoreTemplateState(savedTemplate) {
     const p = PREFIX[type];
 
     // Restore all settings
-    if ($(p + '-text'))          $(p + '-text').value = settings.text || '';
-    if ($(p + '-font'))          $(p + '-font').value = settings.font || 'Cinzel';
+    const textToRestore = settings.originalText !== undefined ? settings.originalText : (settings.text || '');
+    if ($(p + '-text'))          $(p + '-text').value = textToRestore;
     if ($(p + '-color'))         $(p + '-color').value = settings.color || '#ded8ae';
     if ($(p + '-color-hex'))     $(p + '-color-hex').textContent = settings.color || '#ded8ae';
     if ($(p + '-bold'))          $(p + '-bold').checked = settings.bold ?? true;
     if ($(p + '-italic'))        $(p + '-italic').checked = settings.italic ?? false;
-    if ($(p + '-spacing'))       $(p + '-spacing').value = settings.spacing ?? 1;
-    if ($(p + '-spacing-value')) $(p + '-spacing-value').textContent = ((settings.spacing ?? 1) / 10).toFixed(1) + 'em';
-    if ($(p + '-effect'))        $(p + '-effect').value = settings.effect || 'embossed';
-    if ($(p + '-size'))          $(p + '-size').value = state.fontSize;
+    if ($(p + '-spacing'))           $(p + '-spacing').value = settings.spacing ?? 0;
+    if ($(p + '-spacing-value'))     $(p + '-spacing-value').textContent = ((settings.spacing ?? 0) / 10).toFixed(1) + 'em';
+    if ($(p + '-line-spacing'))      $(p + '-line-spacing').value = settings.lineSpacing ?? 9;
+    if ($(p + '-line-spacing-value')) $(p + '-line-spacing-value').textContent = ((settings.lineSpacing ?? 9) / 10).toFixed(1);
+    if ($(p + '-alignment'))        $(p + '-alignment').value = settings.alignment || 'center';
+    if ($(p + '-size'))             $(p + '-size').value = state.fontSize;
     if ($(p + '-size-value'))    $(p + '-size-value').textContent = state.fontSize + 'px';
     if ($(p + '-tilt-x'))        $(p + '-tilt-x').value = state.tiltX;
     if ($(p + '-tilt-x-value'))  $(p + '-tilt-x-value').textContent = state.tiltX + '°';
@@ -214,36 +436,151 @@ function restoreTemplateState(savedTemplate) {
   restoreBlock('spineAuthor', savedTemplate.blocks.spineAuthor);
 }
 
-/* ── init ────────────────────────────────────────────── */
-function init() {
-  renderGallery();
-  bindEvents();
+/* ── template name dialog ────────────────────────────── */
+function showTemplateNameDialog() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('template-name-modal');
+    const input = document.getElementById('template-name-input');
+    const saveBtn = document.getElementById('template-name-save');
+    const cancelBtn = document.getElementById('template-name-cancel');
+    
+    if (!modal || !input || !saveBtn || !cancelBtn) {
+      console.error('Template name modal elements not found');
+      resolve(null);
+      return;
+    }
+    
+    // Reset input
+    input.value = '';
+    modal.style.display = 'flex';
+    input.focus();
+    
+    const handleSave = () => {
+      const name = input.value.trim();
+      modal.style.display = 'none';
+      saveBtn.removeEventListener('click', handleSave);
+      cancelBtn.removeEventListener('click', handleCancel);
+      input.removeEventListener('keydown', handleKeyDown);
+      resolve(name || `Saved Template ${new Date().toLocaleDateString()}`);
+    };
+    
+    const handleCancel = () => {
+      modal.style.display = 'none';
+      saveBtn.removeEventListener('click', handleSave);
+      cancelBtn.removeEventListener('click', handleCancel);
+      input.removeEventListener('keydown', handleKeyDown);
+      resolve(null);
+    };
+    
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+    
+    saveBtn.addEventListener('click', handleSave);
+    cancelBtn.addEventListener('click', handleCancel);
+    input.addEventListener('keydown', handleKeyDown);
+  });
 }
 
-function renderGallery() {
-  const allTemplates = getAllTemplates();
+/* ── init ────────────────────────────────────────────── */
+function init() {
+  console.log('=== INIT STARTED ===');
   
-  // Use the exact name from template config (already set correctly)
-  const validTemplates = allTemplates.map(t => {
-    // Use the name directly from config - it's already set correctly
-    const displayName = t.name || 'Untitled Template';
-    return { ...t, displayName: displayName.trim() };
-  });
+  // Wait for everything to be ready
+  function initializeApp() {
+    console.log('=== INITIALIZING APP ===');
+    console.log('TEMPLATES available:', typeof TEMPLATES !== 'undefined', typeof window !== 'undefined' && typeof window.TEMPLATES !== 'undefined');
+    
+    // Render gallery
+    renderGallery();
+    bindEvents();
+    
+    // Retry after delay to ensure everything loaded
+    setTimeout(async () => {
+      console.log('=== RETRY RENDER ===');
+      await renderGallery();
+    }, 1000);
+  }
+  
+  // Wait for DOM and scripts
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(initializeApp, 200);
+    });
+  } else {
+    setTimeout(initializeApp, 200);
+  }
+}
 
-  templateGallery.innerHTML = validTemplates.map(t => {
-    const name = t.displayName || t.name || 'Untitled';
-    return `
+function renderTemplateCard(t) {
+  if (!t || !t.id) {
+    console.error('Invalid template:', t);
+    return '';
+  }
+  const name = t.name || 'Untitled';
+  let imageSrc = t.image || '';
+  
+  console.log('Rendering template card:', name, 'image:', imageSrc);
+  
+  // Handle different image path types
+  if (imageSrc) {
+    // Already a file URL - leave as-is
+    if (imageSrc.startsWith('file://')) {
+      // no-op
+    }
+    // Default templates: keep relative paths as-is (templates/filename.ext)
+    else if (imageSrc.startsWith('templates/')) {
+      // Keep relative path - Electron will resolve it relative to index.html
+      // No conversion needed
+    }
+    // Data URLs: keep as-is
+    else if (imageSrc.startsWith('data:')) {
+      // Keep data URL as-is
+    }
+    // My templates: convert to file:// URL
+    else if (imageSrc.startsWith('My templates/')) {
+      if (typeof require !== 'undefined') {
+        try {
+          const pathModule = require('path');
+          const fullPath = pathModule.join(__dirname || process.cwd(), imageSrc);
+          imageSrc = `file://${fullPath.replace(/\\/g, '/')}`;
+        } catch(e) {
+          console.warn('Could not convert My templates image path:', e);
+        }
+      }
+    }
+    // Absolute paths: convert to file:// URL
+    else if ((imageSrc.includes('\\') || imageSrc.includes('/')) && !imageSrc.startsWith('http')) {
+      if (typeof require !== 'undefined') {
+        try {
+          imageSrc = `file://${imageSrc.replace(/\\/g, '/')}`;
+        } catch(e) {
+          console.warn('Could not convert absolute image path:', e);
+        }
+      }
+    }
+  }
+  
+  return `
     <div class="template-card" data-id="${t.id}" data-user="${t.isUserTemplate ? 'true' : 'false'}" data-card-id="${t.id}">
-      <img src="${t.image}" alt="${name}" loading="lazy" 
-           data-template-id="${t.id}">
+      <img src="${imageSrc}" alt="${name}" loading="lazy" 
+           data-template-id="${t.id}" 
+           onerror="console.error('Failed to load image for template:', '${name}', 'src:', this.src); this.style.border='2px solid red';">
       <div class="template-name">${name}</div>
       ${t.isUserTemplate ? `<button class="delete-template-btn" data-id="${t.id}" title="Delete template">×</button>` : ''}
     </div>
   `;
-  }).join('');
+}
 
+function setupGalleryEvents(gallery) {
   // Handle image load errors - hide cards with missing images
-  templateGallery.querySelectorAll('img').forEach(img => {
+  gallery.querySelectorAll('img').forEach(img => {
     img.addEventListener('error', function() {
       const card = this.closest('.template-card');
       if (card) {
@@ -262,29 +599,199 @@ function renderGallery() {
   });
 
   // Add delete handlers for user templates
-  templateGallery.querySelectorAll('.delete-template-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  gallery.querySelectorAll('.delete-template-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
       if (confirm('Delete this saved template?')) {
-        deleteUserTemplate(id);
-        renderGallery();
+        await deleteUserTemplate(id);
+        await renderGallery();
       }
     });
   });
 }
 
+async function renderGallery() {
+  console.log('=== RENDER GALLERY ===');
+  console.log('Window object:', typeof window);
+  console.log('TEMPLATES check:', typeof TEMPLATES);
+  console.log('window.TEMPLATES check:', typeof window !== 'undefined' ? typeof window.TEMPLATES : 'window undefined');
+  
+  // Get templates - try all possible ways with more aggressive checking
+  let defaultTemplates = [];
+  
+  // Method 1: Direct TEMPLATES
+  if (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) {
+    defaultTemplates = TEMPLATES;
+    console.log('✅ Method 1: Found TEMPLATES directly:', defaultTemplates.length);
+  }
+  // Method 2: window.TEMPLATES
+  else if (typeof window !== 'undefined' && window.TEMPLATES && Array.isArray(window.TEMPLATES)) {
+    defaultTemplates = window.TEMPLATES;
+    console.log('✅ Method 2: Found window.TEMPLATES:', defaultTemplates.length);
+  }
+  // Method 3: Try global scope
+  else {
+    try {
+      // Try accessing via globalThis or this
+      if (typeof globalThis !== 'undefined' && globalThis.TEMPLATES) {
+        defaultTemplates = globalThis.TEMPLATES;
+        console.log('✅ Method 3: Found globalThis.TEMPLATES:', defaultTemplates.length);
+      } else {
+        console.error('❌ TEMPLATES not found in any scope!');
+        console.error('Available window properties:', Object.keys(window || {}).slice(0, 20));
+      }
+    } catch(e) {
+      console.error('Error accessing TEMPLATES:', e);
+    }
+  }
+  
+  console.log('Final templates count:', defaultTemplates.length);
+  if (defaultTemplates.length > 0) {
+    console.log('First template:', defaultTemplates[0]);
+  }
+  
+  // Split default templates into front vs spine groups based on filename
+  const frontTemplates = defaultTemplates.filter(t => {
+    const img = (t.image || '').toLowerCase();
+    return !img.includes('spine');
+  });
+  const spineTemplates = defaultTemplates.filter(t => {
+    const img = (t.image || '').toLowerCase();
+    return img.includes('spine');
+  });
+  
+  const frontGallery = document.getElementById('default-front-gallery');
+  const spineGallery = document.getElementById('default-spine-gallery');
+
+  if (frontGallery) {
+    if (frontTemplates.length > 0) {
+      const html = frontTemplates.map(renderTemplateCard).join('');
+      console.log('Rendering front templates, count:', frontTemplates.length);
+      frontGallery.innerHTML = html;
+      setupGalleryEvents(frontGallery);
+    } else {
+      frontGallery.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">No front templates found.</p>';
+    }
+  }
+
+  if (spineGallery) {
+    if (spineTemplates.length > 0) {
+      const html = spineTemplates.map(renderTemplateCard).join('');
+      console.log('Rendering spine templates, count:', spineTemplates.length);
+      spineGallery.innerHTML = html;
+      setupGalleryEvents(spineGallery);
+    } else {
+      spineGallery.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">No spine templates found.</p>';
+    }
+  }
+  
+  // Fallback to legacy gallery
+  const legacyGallery = document.getElementById('template-gallery');
+  if (legacyGallery && defaultTemplates.length > 0) {
+    const savedTemplates = await getUserTemplates();
+    const allTemplates = [...defaultTemplates, ...savedTemplates];
+    legacyGallery.innerHTML = allTemplates.map(renderTemplateCard).join('');
+    setupGalleryEvents(legacyGallery);
+    console.log('✅ Rendered to legacy gallery:', allTemplates.length, 'templates');
+  }
+
+  // Render saved templates (async)
+  await renderSavedTemplates();
+}
+
+async function renderSavedTemplates() {
+  const savedTemplates = await getUserTemplates();
+  console.log('Saved templates:', savedTemplates.length);
+  
+  const savedGallery = document.getElementById('saved-template-gallery');
+  const noSavedMsg = document.getElementById('no-saved-templates');
+  const addCardHtml = `
+    <div class="template-card add-template-card" id="add-new-template-card" title="Upload an image to use as a template">
+      <span class="add-template-plus">+</span>
+      <div class="template-name">Add new template</div>
+    </div>`;
+
+  if (savedGallery) {
+    if (savedTemplates.length > 0) {
+      savedGallery.innerHTML = addCardHtml + savedTemplates.map(renderTemplateCard).join('');
+      setupGalleryEvents(savedGallery);
+      if (noSavedMsg) noSavedMsg.style.display = 'none';
+      console.log('✅ Rendered', savedTemplates.length, 'saved templates');
+    } else {
+      savedGallery.innerHTML = addCardHtml;
+      setupGalleryEvents(savedGallery);
+      if (noSavedMsg) noSavedMsg.style.display = 'block';
+    }
+  } else {
+    console.error('❌ saved-template-gallery element not found!');
+  }
+}
+
 /* ── events ──────────────────────────────────────────── */
 function bindEvents() {
-  templateGallery.addEventListener('click', e => {
+  // Handle clicks on both galleries using event delegation
+  const handleGalleryClick = async (e) => {
+    // Don't trigger on delete button clicks
+    if (e.target.classList.contains('delete-template-btn')) {
+      return;
+    }
+    
     const card = e.target.closest('.template-card');
-    if (card) selectTemplate(card.dataset.id);
-  });
+    if (card) {
+      if (card.classList.contains('add-template-card')) {
+        await addNewTemplate();
+        return;
+      }
+      const templateId = card.dataset.id;
+      console.log('Template card clicked, id:', templateId);
+      if (templateId) {
+        await selectTemplate(templateId);
+      } else {
+        console.error('Template card has no id:', card);
+      }
+    }
+  };
+  
+  // Use event delegation on gallery section to catch dynamically added cards
+  if (gallerySection) {
+    gallerySection.addEventListener('click', handleGalleryClick);
+    console.log('✅ Event listener added to gallerySection');
+  }
+  
+  // Also add to individual galleries as backup
+  if (defaultFrontGallery) {
+    defaultFrontGallery.addEventListener('click', handleGalleryClick);
+    console.log('✅ Event listener added to defaultFrontGallery');
+  }
+  if (defaultSpineGallery) {
+    defaultSpineGallery.addEventListener('click', handleGalleryClick);
+    console.log('✅ Event listener added to defaultSpineGallery');
+  }
+  if (savedTemplateGallery) {
+    savedTemplateGallery.addEventListener('click', handleGalleryClick);
+    console.log('✅ Event listener added to savedTemplateGallery');
+  }
+  
+  // Legacy support for old templateGallery reference
+  if (templateGallery && templateGallery !== defaultTemplateGallery && templateGallery !== savedTemplateGallery) {
+    templateGallery.addEventListener('click', handleGalleryClick);
+  }
 
   backBtn.addEventListener('click', () => {
     editorSection.classList.add('hidden');
     gallerySection.classList.remove('hidden');
     currentTemplate = null;
+  });
+
+  ['title', 'author', 'spine-title', 'spine-author'].forEach(type => {
+    const textInput = $(type + '-text');
+
+    if (textInput) {
+      textInput.addEventListener('input', function() {
+        updateOverlays();
+      });
+    }
   });
 
   /* All inputs inside the controls panel trigger updateOverlays */
@@ -300,10 +807,8 @@ function bindEvents() {
     el.addEventListener('input', () => {
       const valEl = $(el.id + '-value');
       if (!valEl) return;
-      if (el.id.endsWith('-spacing'))              valEl.textContent = (parseInt(el.value) / 10).toFixed(1) + 'em';
-      else if (el.id.endsWith('-curve'))            valEl.textContent = el.value;
-      else if (el.id.endsWith('-feather-amount'))   valEl.textContent = el.value;
-      else if (el.id.endsWith('-tilt-x') || el.id.endsWith('-tilt-y')) valEl.textContent = el.value + '°';
+      if (el.id.endsWith('-spacing') && !el.id.includes('line-')) valEl.textContent = (parseInt(el.value) / 10).toFixed(1) + 'em';
+      else if (el.id.endsWith('-line-spacing'))    valEl.textContent = (parseInt(el.value) / 10).toFixed(1);
       else                                          valEl.textContent = el.value + 'px';
     });
   });
@@ -317,23 +822,34 @@ function bindEvents() {
 
   downloadBtn.addEventListener('click', downloadImage);
 
-  saveTemplateBtn.addEventListener('click', () => {
+  saveTemplateBtn.addEventListener('click', async () => {
     if (!currentTemplate || !previewImage.src) {
       alert('Please select a template and add some text first.');
       return;
     }
 
-    const saved = captureCurrentState();
+    // Disable button during capture
+    saveTemplateBtn.disabled = true;
+    saveTemplateBtn.textContent = 'Capturing...';
+
+    const saved = await captureCurrentState();
+    
+    // Re-enable button
+    saveTemplateBtn.disabled = false;
+    saveTemplateBtn.textContent = 'Save as Template';
+
     if (!saved) {
       alert('Failed to capture current state. Please try again.');
       return;
     }
 
-    if (saveUserTemplate(saved)) {
-      alert(`Template "${saved.name}" saved successfully!`);
-      renderGallery(); // Refresh gallery to show new template
+    const saveResult = await saveUserTemplate(saved);
+    if (saveResult) {
+      alert(`Template "${saved.name}" saved successfully to My templates folder!`);
+      // Refresh gallery to show new template
+      await renderGallery();
     } else {
-      alert('Failed to save template. Storage may be full.');
+      alert('Failed to save template. Please try again.');
     }
   });
 
@@ -347,13 +863,74 @@ function bindEvents() {
     h.addEventListener('mousedown', startResize);
   });
 
+  /* Rotate — on rotation handles */
+  document.querySelectorAll('.rotate-handle').forEach(h => {
+    h.addEventListener('mousedown', startRotate);
+  });
+
   document.addEventListener('mousemove', onPointerMove);
   document.addEventListener('mouseup',   endPointer);
+
+  /* Zoom controls */
+  if (zoomInBtn) zoomInBtn.addEventListener('click', zoomIn);
+  if (zoomOutBtn) zoomOutBtn.addEventListener('click', zoomOut);
+  if (zoomResetBtn) zoomResetBtn.addEventListener('click', resetZoom);
+  
+  /* Mouse wheel zoom (Ctrl/Cmd + scroll) */
+  document.addEventListener('wheel', handleWheelZoom, { passive: false });
+  
+  /* Initialize zoom display */
+  updateZoom(1.0);
 }
 
 function debounce(fn, ms) {
   let t;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+/* ── zoom functionality ───────────────────────────────── */
+
+const MIN_ZOOM = 0.25; // 25%
+const MAX_ZOOM = 3.0;  // 300%
+const ZOOM_STEP = 0.1; // 10% per step
+
+function updateZoom(level) {
+  zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, level));
+  if (editorPreview) {
+    editorPreview.style.transform = `scale(${zoomLevel})`;
+  }
+  if (spineImagePreview) {
+    spineImagePreview.style.transform = `scale(${zoomLevel})`;
+  }
+  if (zoomLevelDisplay) {
+    zoomLevelDisplay.textContent = Math.round(zoomLevel * 100) + '%';
+  }
+}
+
+function zoomIn() {
+  updateZoom(zoomLevel + ZOOM_STEP);
+}
+
+function zoomOut() {
+  updateZoom(zoomLevel - ZOOM_STEP);
+}
+
+function resetZoom() {
+  updateZoom(1.0);
+}
+
+function handleWheelZoom(e) {
+  // Only zoom when hovering over the preview area
+  if (!editorPreview.contains(e.target) && !e.target.closest('.editor-preview')) {
+    return;
+  }
+  
+  // Prevent default scrolling when Ctrl/Cmd is held
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    updateZoom(zoomLevel + delta);
+  }
 }
 
 /* ── spine canvas renderer ───────────────────────────── */
@@ -368,7 +945,8 @@ function debounce(fn, ms) {
 function renderSpineArcText(canvas, text, opts) {
   const {
     fontSize, fontFamily, color, curve, bold, italic,
-    effect, effectColor, letterSpacingEm, feather, featherAmount
+    effect, effectColor, letterSpacingEm, feather, featherAmount,
+    lineSpacing = 9, alignment = 'center'
   } = opts;
 
   const parent = canvas.parentElement;
@@ -392,10 +970,12 @@ function renderSpineArcText(canvas, text, opts) {
   const scaledSize = Math.round(fontSize * scale);
   const fontStr    = `${fontStyle}${fontWeight} ${scaledSize}px "${fontFamily}", Georgia, serif`;
 
-  const lineHeight   = scaledSize * 1.3;
+  const lineHeightMult = (lineSpacing !== undefined ? lineSpacing / 10 : 0.9);
+  const lineHeight   = scaledSize * lineHeightMult;
   const totalTextH   = lines.length * lineHeight;
   const startY       = (h - totalTextH) / 2 + lineHeight / 2;
   const extraSpacing = (letterSpacingEm || 0) * scaledSize;
+  const anchorX      = alignment === 'left' ? scaledSize : alignment === 'right' ? w - scaledSize : w / 2;
 
   /* step 1: flat render to offscreen */
   const off = document.createElement('canvas');
@@ -411,13 +991,13 @@ function renderSpineArcText(canvas, text, opts) {
       oc.font = fontStr; oc.fillStyle = s.color; oc.globalAlpha = s.alpha;
       oc.textAlign = 'center'; oc.textBaseline = 'middle';
       if (s.blur > 0) oc.filter = `blur(${s.blur * scale}px)`;
-      _drawSpacedText(oc, lines[li], w/2 + s.ox*scale, y + s.oy*scale, extraSpacing);
+      _drawSpacedText(oc, lines[li], anchorX + s.ox*scale, y + s.oy*scale, extraSpacing, alignment);
       oc.restore();
     });
     oc.save();
     oc.font = fontStr; oc.fillStyle = color; oc.globalAlpha = 1;
     oc.textAlign = 'center'; oc.textBaseline = 'middle'; oc.filter = 'none';
-    _drawSpacedText(oc, lines[li], w/2, y, extraSpacing);
+    _drawSpacedText(oc, lines[li], anchorX, y, extraSpacing, alignment);
     oc.restore();
   }
 
@@ -486,12 +1066,19 @@ function renderSpineArcText(canvas, text, opts) {
   }
 }
 
-function _drawSpacedText(ctx, text, x, y, spacing) {
-  if (spacing <= 0) { ctx.fillText(text, x, y); return; }
+function _drawSpacedText(ctx, text, x, y, spacing, align) {
+  align = align || 'center';
+  if (spacing <= 0) {
+    const saved = ctx.textAlign;
+    ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+    ctx.textAlign = saved;
+    return;
+  }
   const chars  = text.split('');
   const widths = chars.map(c => ctx.measureText(c).width);
   const totalW = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
-  let cx = x - totalW / 2;
+  let cx = align === 'left' ? x : align === 'right' ? x - totalW : x - totalW / 2;
   const saved = ctx.textAlign;
   ctx.textAlign = 'left';
   for (let i = 0; i < chars.length; i++) { ctx.fillText(chars[i], cx, y); cx += widths[i] + spacing; }
@@ -538,7 +1125,7 @@ function getTextEffectStyles(effect, colorHex) {
 /* ── drag / resize ───────────────────────────────────── */
 
 function startDrag(e) {
-  if (e.target.closest('.resize-handle')) return;
+  if (e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
   e.preventDefault();
   const block = e.currentTarget.classList.contains('text-block') ? e.currentTarget : e.currentTarget.closest('.text-block');
   if (!block) return;
@@ -563,6 +1150,23 @@ function startResize(e) {
   resizeStart = { left: state.left, top: state.top, width: state.width, height: state.height, fontSize: state.fontSize, mouseX: e.clientX, mouseY: e.clientY };
 }
 
+function startRotate(e) {
+  e.preventDefault(); e.stopPropagation();
+  const handle = e.currentTarget;
+  const block  = handle.closest('.text-block');
+  if (!block) return;
+  const type   = block.dataset.type;
+  const state  = getState(type);
+  const rect = block.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top  + rect.height / 2;
+  const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+  const currentRot = state.rotation || 0;
+  rotateTarget = block;
+  block.classList.add('rotating');
+  rotateStart = { type, cx, cy, startAngle, startRotation: currentRot };
+}
+
 function getState(type) {
   return type === 'title' ? titleState : type === 'author' ? authorState : type === 'spineTitle' ? spineTitleState : spineAuthorState;
 }
@@ -575,7 +1179,12 @@ function setState(type, s) {
 }
 
 function onPointerMove(e) {
-  const rect = editorPreview.getBoundingClientRect();
+  const active = rotateTarget || resizeTarget || dragTarget;
+  const activeType = active && active.dataset ? active.dataset.type : null;
+  const container = (activeType === 'spineTitle' || activeType === 'spineAuthor')
+    ? (spineImagePreview || editorPreview)
+    : editorPreview;
+  const rect = container.getBoundingClientRect();
 
   if (resizeTarget && resizeHandle) {
     const type  = resizeTarget.dataset.type;
@@ -608,6 +1217,48 @@ function onPointerMove(e) {
     return;
   }
 
+  if (resizeTarget && resizeHandle) {
+    const type  = resizeTarget.dataset.type;
+    const dx    = ((e.clientX - resizeStart.mouseX) / rect.width)  * 100;
+    const dy    = ((e.clientY - resizeStart.mouseY) / rect.height) * 100;
+    let { left, top, width, height, fontSize } = resizeStart;
+    const minW = 5, minH = 3;
+
+    switch (resizeHandle) {
+      case 'se': width = Math.max(minW, resizeStart.width + dx); height = Math.max(minH, resizeStart.height + dy); break;
+      case 'sw': width = Math.max(minW, resizeStart.width - dx); height = Math.max(minH, resizeStart.height + dy); left = resizeStart.left + dx; break;
+      case 'ne': width = Math.max(minW, resizeStart.width + dx); height = Math.max(minH, resizeStart.height - dy); top = resizeStart.top + dy; break;
+      case 'nw': width = Math.max(minW, resizeStart.width - dx); height = Math.max(minH, resizeStart.height - dy); left = resizeStart.left + dx; top = resizeStart.top + dy; break;
+    }
+
+    const maxFontMap = { title: 200, author: 150, spineTitle: 80, spineAuthor: 60 };
+    const maxFont = maxFontMap[type] || 150;
+    fontSize = Math.round(Math.max(6, Math.min(maxFont, resizeStart.fontSize * Math.min(width / resizeStart.width, height / resizeStart.height))));
+
+    const prev = getState(type);
+    setState(type, { ...prev, left, top, width, height, fontSize });
+
+    /* sync the size slider */
+    const p = PREFIX[type];
+    const sizeEl = $(p + '-size'), sizeVal = $(p + '-size-value');
+    if (sizeEl)  sizeEl.value = fontSize;
+    if (sizeVal) sizeVal.textContent = fontSize + 'px';
+
+    if (!resizeRaf) { resizeRaf = requestAnimationFrame(() => { updateOverlays(); resizeRaf = null; }); }
+    return;
+  }
+
+  if (rotateTarget && rotateStart) {
+    const { type, cx, cy, startAngle, startRotation } = rotateStart;
+    const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+    let rotation = startRotation + (angle - startAngle);
+    rotation = Math.max(-90, Math.min(90, rotation));
+    const prev = getState(type);
+    setState(type, { ...prev, rotation });
+    if (!rotateRaf) { rotateRaf = requestAnimationFrame(() => { updateOverlays(); rotateRaf = null; }); }
+    return;
+  }
+
   if (dragTarget) {
     const leftPct = ((e.clientX - rect.left - dragOffset.x) / rect.width)  * 100;
     const topPct  = ((e.clientY - rect.top  - dragOffset.y) / rect.height) * 100;
@@ -621,14 +1272,40 @@ function onPointerMove(e) {
 function endPointer() {
   if (dragTarget)  { dragTarget.classList.remove('dragging'); dragTarget = null; }
   if (resizeTarget){ resizeTarget.querySelectorAll('.resize-handle').forEach(h => h.classList.remove('resizing')); resizeTarget = null; resizeHandle = null; }
+  if (rotateTarget){ rotateTarget.classList.remove('rotating'); rotateTarget = null; rotateStart = null; }
 }
 
 /* ── template selection ──────────────────────────────── */
 
-function selectTemplate(id) {
-  const allTemplates = getAllTemplates();
+async function selectTemplate(id) {
+  console.log('selectTemplate called with id:', id);
+  
+  // Get all templates - combine default and saved
+  let allTemplates = [];
+  try {
+    // Get default templates
+    if (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) {
+      allTemplates = [...TEMPLATES];
+    } else if (typeof window !== 'undefined' && window.TEMPLATES && Array.isArray(window.TEMPLATES)) {
+      allTemplates = [...window.TEMPLATES];
+    }
+    
+    // Get saved templates
+    const savedTemplates = await getUserTemplates();
+    allTemplates = [...allTemplates, ...savedTemplates];
+    
+    console.log('All templates:', allTemplates.length, 'Default:', typeof TEMPLATES !== 'undefined' ? TEMPLATES?.length : 0, 'Saved:', savedTemplates.length);
+  } catch(e) {
+    console.error('Error getting templates:', e);
+  }
+  
   const template = allTemplates.find(t => t.id === id);
-  if (!template) return;
+  console.log('Found template:', template ? template.name : 'NOT FOUND');
+  if (!template) {
+    console.error('Template not found with id:', id);
+    alert('Template not found. Please try again.');
+    return;
+  }
 
   currentTemplate = template;
   templateImage   = new Image();
@@ -638,6 +1315,9 @@ function selectTemplate(id) {
     document.querySelector(`[data-id="${id}"]`)?.classList.add('selected');
     gallerySection.classList.add('hidden');
     editorSection.classList.remove('hidden');
+    
+    // Reset zoom when selecting a new template
+    resetZoom();
 
     if (template.isUserTemplate && template.blocks) {
       // User template: restore all saved settings
@@ -663,13 +1343,47 @@ function selectTemplate(id) {
       resetControls('spineAuthor', { text:'', size:10, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
     }
 
-    previewImage.src = template.image;
+    // For user templates, prefer stored frontImage; fall back to image (thumbnail)
+    if (template.isUserTemplate && template.frontImage) {
+      previewImage.src = template.frontImage;
+    } else {
+      previewImage.src = template.image;
+    }
+
+    // Also show matching spine-only image (if available) below the main preview
+    if (spinePreviewImage) {
+      // For user templates, use stored spineImage if present
+      if (template.isUserTemplate && template.spineImage) {
+        spinePreviewImage.src = template.spineImage;
+        spinePreviewImage.parentElement.style.display = '';
+      } else {
+        const baseId = template.id.replace(/-spine$/, '');
+        const spineIdCandidates = [
+          baseId + '-spine',
+          baseId.replace(/-front$/, '') + '-spine'
+        ];
+        const matchingSpine = allTemplates.find(t => spineIdCandidates.includes(t.id)) ||
+          allTemplates.find(t => (t.image || '').toLowerCase().includes('spine') &&
+            (t.name || '').split(' ')[0] === (template.name || '').split(' ')[0]);
+        if (matchingSpine && matchingSpine.image) {
+          spinePreviewImage.src = matchingSpine.image;
+          spinePreviewImage.parentElement.style.display = '';
+        } else {
+          spinePreviewImage.src = '';
+          spinePreviewImage.parentElement.style.display = 'none';
+        }
+      }
+    }
     updateOverlays();
   };
 
   templateImage.onerror = () => {
-    alert('Could not load image: ' + template.image + '\nAdd your images to the templates/ folder.');
+    console.error('Failed to load template image:', template.image);
+    alert('Could not load image: ' + template.image + '\nPlease check if the image file exists.');
+    // Don't hide editor, just show error
   };
+  
+  console.log('Loading template image:', template.image);
   templateImage.src = template.image;
 }
 
@@ -696,10 +1410,14 @@ function renderCoverBlock(type, block, state) {
   }
 
   const tc = block.querySelector('.text-content');
-  tc.textContent   = s.text || '';
-  block.style.display = s.text ? 'flex' : 'none';
+  if (!tc) return;
+  // Use text from readSettings (already transformed by caps lock there)
+  const displayText = s.text || '';
+  tc.textContent = displayText;
+  tc.style.textTransform = 'none'; // prevent any CSS from changing case
+  block.style.display = displayText ? 'flex' : 'none';
 
-  if (s.text) {
+  if (displayText) {
     block.style.left      = `${state.left}%`;
     block.style.top       = `${state.top}%`;
     block.style.width     = `${state.width}%`;
@@ -707,13 +1425,17 @@ function renderCoverBlock(type, block, state) {
     block.style.fontSize  = `${state.fontSize}px`;
     block.style.fontFamily = `"${s.font}", Georgia, serif`;
     block.style.color     = s.color;
-    block.style.transform = `perspective(600px) rotateX(${state.tiltX}deg) rotateY(${state.tiltY}deg)`;
+    const rot = state.rotation || 0;
+    block.style.transform = `perspective(600px) rotateX(${state.tiltX}deg) rotateY(${state.tiltY}deg) rotateZ(${rot}deg)`;
 
     const spacingEm = (s.spacing / 10).toFixed(1) + 'em';
+    const lineHeight = (s.lineSpacing / 10).toFixed(1);
     const fx        = getTextEffectStyles(s.effect, s.color);
     tc.style.fontWeight    = s.bold ? '700' : '400';
     tc.style.fontStyle     = s.italic ? 'italic' : 'normal';
     tc.style.letterSpacing = spacingEm;
+    tc.style.lineHeight    = lineHeight;
+    tc.style.textAlign     = s.alignment || 'center';
     tc.style.textShadow    = s.effect !== 'none' ? fx.textShadow : 'none';
   }
 }
@@ -729,17 +1451,21 @@ function renderSpineBlock(type, block, state) {
     state.tiltY    = parseInt($(p + '-tilt-y')?.value ?? state.tiltY);
   }
 
-  const canvas = block.querySelector('.spine-canvas');
-  block.style.display = s.text ? 'flex' : 'none';
+  // Use text from readSettings (already transformed by caps lock there)
+  const displayText = s.text || '';
 
-  if (s.text && canvas) {
+  const canvas = block.querySelector('.spine-canvas');
+  block.style.display = displayText ? 'flex' : 'none';
+
+  if (displayText && canvas) {
     block.style.left   = `${state.left}%`;
     block.style.top    = `${state.top}%`;
     block.style.width  = `${state.width}%`;
     block.style.height = `${state.height}%`;
-    block.style.transform = `perspective(600px) rotateX(${state.tiltX}deg) rotateY(${state.tiltY}deg)`;
+    const rot = state.rotation || 0;
+    block.style.transform = `perspective(600px) rotateX(${state.tiltX}deg) rotateY(${state.tiltY}deg) rotateZ(${rot}deg)`;
 
-    renderSpineArcText(canvas, s.text, {
+    renderSpineArcText(canvas, displayText, {
       fontSize:       state.fontSize,
       fontFamily:     s.font,
       color:          s.color,
@@ -749,6 +1475,8 @@ function renderSpineBlock(type, block, state) {
       effect:         s.effect,
       effectColor:    s.color,
       letterSpacingEm: s.spacing / 10,
+      lineSpacing:    s.lineSpacing,
+      alignment:      s.alignment,
       feather:        s.feather,
       featherAmount:  s.featherAmount
     });
@@ -762,19 +1490,89 @@ function downloadImage() {
   const has = ['title','author','spineTitle','spineAuthor'].some(t => readSettings(t).text);
   if (!has) { alert('Add some text first.'); return; }
 
-  document.querySelectorAll('.resize-handle').forEach(h => { h.style.opacity = '0'; });
+   // Temporarily reset zoom to 100% for clean export
+  const originalZoom = zoomLevel;
+  updateZoom(1.0);
 
-  html2canvas(editorPreview, { useCORS:true, allowTaint:true, scale:2, backgroundColor:null, logging:false })
-    .then(canvas => {
-      document.querySelectorAll('.resize-handle').forEach(h => { h.style.opacity = ''; });
-      const link = document.createElement('a');
-      link.download = `text-on-photo-${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+  // Hide handles on the live DOM so they don't appear in capture
+  const liveHandles = document.querySelectorAll('.resize-handle, .rotate-handle');
+  const liveHandleOpacities = Array.from(liveHandles).map(h => h.style.opacity);
+  liveHandles.forEach(h => { h.style.opacity = '0'; });
+
+  const bgColor = getComputedStyle(document.body).backgroundColor || '#111';
+
+  const captureElement = (sourceElem, suffix, useLive = false) => {
+    return new Promise((resolve, reject) => {
+      if (!sourceElem) {
+        resolve(null);
+        return;
+      }
+
+      // For spine (canvas-based), capture the live element so the drawn pixels are included.
+      if (useLive) {
+        html2canvas(sourceElem, { useCORS:true, allowTaint:true, scale:2, backgroundColor:null, logging:false })
+          .then(canvas => {
+            const link = document.createElement('a');
+            link.download = `text-on-photo-${suffix}-${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            resolve(true);
+          })
+          .catch(err => {
+            console.error('Export failed for', suffix, err);
+            reject(err);
+          });
+        return;
+      }
+
+      // For front, we can safely clone into an off-screen wrapper.
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'fixed';
+      wrapper.style.left = '-10000px';
+      wrapper.style.top = '-10000px';
+      wrapper.style.background = bgColor;
+      wrapper.style.padding = '16px';
+      wrapper.style.display = 'inline-block';
+
+      const clone = sourceElem.cloneNode(true);
+      wrapper.appendChild(clone);
+
+      // Hide all resize/rotate handles in the cloned content
+      wrapper.querySelectorAll('.resize-handle, .rotate-handle').forEach(h => {
+        h.style.display = 'none';
+      });
+
+      document.body.appendChild(wrapper);
+
+      html2canvas(wrapper, { useCORS:true, allowTaint:true, scale:2, backgroundColor:null, logging:false })
+        .then(canvas => {
+          document.body.removeChild(wrapper);
+          const link = document.createElement('a');
+          link.download = `text-on-photo-${suffix}-${Date.now()}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          resolve(true);
+        })
+        .catch(err => {
+          document.body.removeChild(wrapper);
+          console.error('Export failed for', suffix, err);
+          reject(err);
+        });
+    });
+  };
+
+  Promise.all([
+    captureElement(editorPreview, 'front'),
+    spineImagePreview && spinePreviewImage && spinePreviewImage.src ? captureElement(spineImagePreview, 'spine', true) : Promise.resolve(null)
+  ])
+    .then(() => {
+      liveHandles.forEach((h, i) => { h.style.opacity = liveHandleOpacities[i] || ''; });
+      // Restore original zoom
+      updateZoom(originalZoom);
     })
     .catch(err => {
-      document.querySelectorAll('.resize-handle').forEach(h => { h.style.opacity = ''; });
-      console.error('Export failed:', err);
+      liveHandles.forEach((h, i) => { h.style.opacity = liveHandleOpacities[i] || ''; });
+      updateZoom(originalZoom);
       alert('Export failed. Try again.');
     });
 }

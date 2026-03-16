@@ -58,6 +58,46 @@ header p {
   letter-spacing: 0.05em;
 }
 
+#default-templates-section,
+#saved-templates-section {
+  margin-bottom: 2.5rem;
+}
+
+#saved-templates-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.section-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+}
+
+.section-subtitle {
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 0.25rem 0 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+.no-templates-message {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-style: italic;
+  text-align: center;
+  padding: 2rem;
+  background: var(--bg-card);
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+}
+
 .template-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -105,6 +145,24 @@ header p {
   line-height: 1.4;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.add-template-card {
+  min-height: 140px;
+  justify-content: center;
+  align-items: center;
+}
+
+.add-template-card .add-template-plus {
+  display: block;
+  font-size: 2.5rem;
+  color: var(--accent-gold);
+  line-height: 1;
+  padding: 1rem 0 0.25rem;
+}
+
+.add-template-card .template-name {
+  padding-top: 0.25rem;
 }
 
 .delete-template-btn {
@@ -184,7 +242,7 @@ header p {
   top: 1rem;
   align-self: flex-start;
   max-height: calc(100vh - 4rem);
-  overflow-y: auto;
+  overflow: auto;
 }
 
 .editor-layout .controls-panel {
@@ -218,12 +276,84 @@ header p {
   padding: 1rem;
   border: 1px solid var(--border);
   margin-top: 0;
+  overflow: auto;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  justify-content: center;
+}
+
+.zoom-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.zoom-btn:hover {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: var(--bg-dark);
+}
+
+.zoom-btn:active {
+  transform: scale(0.95);
+}
+
+.zoom-level {
+  min-width: 50px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.zoom-reset-btn {
+  padding: 0.4rem 0.8rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 0.5rem;
+}
+
+.zoom-reset-btn:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
 }
 
 .editor-preview {
   position: relative;
   display: inline-block;
   max-width: 100%;
+  transform-origin: top left;
+  transition: transform 0.2s ease;
+}
+
+.spine-only-preview {
+  display: block;
+  margin-top: 1.25rem;
 }
 
 .preview-image {
@@ -247,6 +377,24 @@ header p {
 
 .text-overlay-wrapper > * {
   pointer-events: auto;
+}
+
+.rotate-handle {
+  position: absolute;
+  top: -12px;
+  right: 50%;
+  transform: translateX(50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-gold);
+  background: var(--bg-dark);
+  cursor: grab;
+}
+
+.text-block.dragging .rotate-handle,
+.text-block.resizing .rotate-handle {
+  cursor: grabbing;
 }
 
 /* Text block - Canva-style with resize handles */
@@ -282,6 +430,7 @@ header p {
   max-width: 100%;
   height: fit-content;
   max-height: 100%;
+  text-transform: none; /* case is controlled by Caps Lock checkbox only */
 }
 
 /* Resize handles - visible on hover */
@@ -516,5 +665,96 @@ header p {
 }
 
 .download-btn:hover {
+  background: var(--accent-gold-hover);
+}
+
+/* Modal Dialog */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border: 2px solid var(--accent-gold);
+  border-radius: 12px;
+  padding: 2rem;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal-content h3 {
+  font-family: 'Cinzel', serif;
+  color: var(--accent-gold);
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+
+.modal-content p {
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.modal-content input[type="text"] {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.modal-content input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.modal-btn-cancel,
+.modal-btn-save {
+  padding: 0.7rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-btn-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.modal-btn-cancel:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.modal-btn-save {
+  background: var(--accent-gold);
+  color: var(--bg-dark);
+  font-weight: 600;
+}
+
+.modal-btn-save:hover {
   background: var(--accent-gold-hover);
 }
