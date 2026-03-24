@@ -89,8 +89,7 @@ let zoomLevel = 1.0; // 1.0 = 100%
 const gallerySection         = $('gallery-section');
 const editorSection          = $('editor-section');
 const templateGallery        = $('template-gallery'); // Legacy - will be replaced
-const defaultFrontGallery    = $('default-front-gallery');
-const defaultSpineGallery    = $('default-spine-gallery');
+const defaultColorGalleries  = $('default-color-galleries');
 const savedTemplateGallery   = $('saved-template-gallery');
 const noSavedTemplatesMsg    = $('no-saved-templates');
 const backBtn               = $('back-btn');
@@ -113,11 +112,40 @@ const zoomInBtn          = $('zoom-in-btn');
 const zoomOutBtn         = $('zoom-out-btn');
 const zoomResetBtn       = $('zoom-reset-btn');
 const zoomLevelDisplay   = $('zoom-level');
+const frontTemplateSelect = $('front-template-select');
+const spineTemplateSelect = $('spine-template-select');
 
 /* ── template storage ───────────────────────────────── */
 
 // File-based template storage using Electron IPC
 let savedTemplatesCache = [];
+let runtimeDefaultTemplates = [];
+
+async function getDefaultTemplatesWithCustomizations(baseTemplates) {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) return baseTemplates;
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('load-default-template-customizations');
+    if (!result || !result.success) return baseTemplates;
+
+    const overrides = result.overrides || {};
+    const deleted = new Set(result.deletedDefaults || []);
+    const extras = Array.isArray(result.extras) ? result.extras : [];
+
+    const merged = baseTemplates
+      .filter(t => t && !deleted.has(String(t.image || '').replace(/\\/g, '/')))
+      .map(t => {
+        const imageKey = String(t.image || '').replace(/\\/g, '/');
+        const overrideImage = overrides[imageKey];
+        return overrideImage ? { ...t, image: overrideImage } : t;
+      });
+
+    return [...merged, ...extras];
+  } catch (e) {
+    console.warn('Failed to load default customizations:', e);
+    return baseTemplates;
+  }
+}
 
 async function getUserTemplates() {
   try {
@@ -207,6 +235,180 @@ async function addNewTemplate() {
   }
 }
 
+async function addNewColorSet() {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Add new color is only available in the desktop app.');
+      return false;
+    }
+
+    const colorName = await showTemplateNameDialog({
+      title: 'Add New Color',
+      description: 'Enter a color name (e.g. Orange):',
+      placeholder: 'Color name',
+      saveLabel: 'Next',
+      cancelLabel: 'Cancel',
+      initialValue: '',
+      fallbackValue: null
+    });
+    if (!colorName || !colorName.trim()) return false;
+
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('add-new-color-set', { colorName: colorName.trim() });
+    if (result.cancelled) return false;
+    if (!result.success) {
+      alert('Failed to add color set: ' + (result.error || 'Unknown error'));
+      return false;
+    }
+
+    // Reload generated templates config and refresh gallery
+    try {
+      if (typeof require !== 'undefined') {
+        const pathModule = require('path');
+        const scriptTag = document.querySelector('script[src*="templates-config.js"]');
+        if (scriptTag) {
+          const reloaded = document.createElement('script');
+          reloaded.src = `templates-config.js?v=${Date.now()}`;
+          document.head.appendChild(reloaded);
+          await new Promise(res => { reloaded.onload = res; reloaded.onerror = res; });
+        }
+      }
+    } catch (reloadErr) {
+      console.warn('Could not hot-reload templates-config.js:', reloadErr);
+    }
+
+    await renderGallery();
+    return true;
+  } catch (e) {
+    console.error('addNewColorSet:', e);
+    alert('Failed to add color set: ' + (e.message || 'Unknown error'));
+    return false;
+  }
+}
+
+async function replaceDefaultTemplateImage(templateId) {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Replace image is only available in the desktop app.');
+      return false;
+    }
+
+    const allTemplates = await getAllTemplates();
+    const t = allTemplates.find(x => x.id === templateId);
+    if (!t || !t.image || !String(t.image).startsWith('templates/')) {
+      alert('This template cannot be edited.');
+      return false;
+    }
+
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('replace-default-template-image', {
+      id: templateId,
+      imagePath: t.image
+    });
+
+    if (result.cancelled) return false;
+    if (!result.success) {
+      alert('Failed to replace template image: ' + (result.error || 'Unknown error'));
+      return false;
+    }
+
+    await renderGallery();
+    return true;
+  } catch (e) {
+    console.error('replaceDefaultTemplateImage:', e);
+    alert('Failed to replace template image: ' + (e.message || 'Unknown error'));
+    return false;
+  }
+}
+
+async function deleteDefaultTemplateImage(templateId) {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Delete image is only available in the desktop app.');
+      return false;
+    }
+
+    const allTemplates = await getAllTemplates();
+    const t = allTemplates.find(x => x.id === templateId);
+    if (!t || !t.image) {
+      alert('This template image cannot be deleted.');
+      return false;
+    }
+    if (!confirm(`Delete this default template image?\n\n${t.name || t.id}`)) return false;
+
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('delete-default-template-image', {
+      id: templateId,
+      imagePath: t.image
+    });
+    if (!result.success) {
+      alert('Failed to delete template image: ' + (result.error || 'Unknown error'));
+      return false;
+    }
+
+    await renderGallery();
+    return true;
+  } catch (e) {
+    console.error('deleteDefaultTemplateImage:', e);
+    alert('Failed to delete template image: ' + (e.message || 'Unknown error'));
+    return false;
+  }
+}
+
+async function deleteColorSet(colorSlug, colorLabel) {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Delete color is only available in the desktop app.');
+      return false;
+    }
+    if (!colorSlug) return false;
+
+    if (!confirm(`Delete color "${colorLabel || colorSlug}" and all its images (Spotlight, Random BG, Spine)?`)) {
+      return false;
+    }
+
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('delete-color-set', { colorSlug });
+    if (!result.success) {
+      alert('Failed to delete color: ' + (result.error || 'Unknown error'));
+      return false;
+    }
+
+    await renderGallery();
+    return true;
+  } catch (e) {
+    console.error('deleteColorSet:', e);
+    alert('Failed to delete color: ' + (e.message || 'Unknown error'));
+    return false;
+  }
+}
+
+async function addImageToSelectedColor(colorSlug, colorLabel) {
+  try {
+    if (typeof require === 'undefined' || !require('electron')) {
+      alert('Add image is only available in the desktop app.');
+      return false;
+    }
+    if (!colorSlug) {
+      alert('Please select a color first.');
+      return false;
+    }
+    const { ipcRenderer } = require('electron');
+    const result = await ipcRenderer.invoke('add-default-image-to-color', { colorSlug });
+    if (result.cancelled) return false;
+    if (!result.success) {
+      alert('Failed to add image: ' + (result.error || 'Unknown error'));
+      return false;
+    }
+    await renderGallery();
+    return true;
+  } catch (e) {
+    console.error('addImageToSelectedColor:', e);
+    alert('Failed to add image: ' + (e.message || 'Unknown error'));
+    return false;
+  }
+}
+
 async function deleteUserTemplate(id) {
   try {
     // Use Electron IPC if available
@@ -232,13 +434,107 @@ async function deleteUserTemplate(id) {
 }
 
 async function getAllTemplates() {
-  const defaultTemplates = (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) 
+  const defaultTemplates = (runtimeDefaultTemplates && runtimeDefaultTemplates.length)
+    ? runtimeDefaultTemplates
+    : (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) 
     ? TEMPLATES 
     : (typeof window !== 'undefined' && window.TEMPLATES && Array.isArray(window.TEMPLATES))
       ? window.TEMPLATES
       : [];
   const savedTemplates = await getUserTemplates();
   return [...defaultTemplates, ...savedTemplates];
+}
+
+function getTemplateKind(template) {
+  const hay = `${template?.id || ''} ${template?.name || ''} ${template?.image || ''}`.toLowerCase();
+  return hay.includes('spine') ? 'spine' : 'front';
+}
+
+function getTemplateDisplayName(template) {
+  return template?.name || template?.id || 'Untitled';
+}
+
+function parseTemplateTypeAndColor(template) {
+  const fromId = String(template?.id || '').toLowerCase();
+  const fromImage = String(template?.image || '')
+    .toLowerCase()
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop() || '';
+  const base = fromImage.replace(/\.[^.]+$/, '').replace(/_+/g, '-');
+
+  const normalizeType = (raw) => {
+    const type = String(raw || '').toLowerCase();
+    if (type === 'random_bg' || type === 'randombg') return 'randomBg';
+    if (type === 'random_bg_spine' || type === 'randombgspine' || type === 'random-bg-spine') return 'randomBgSpine';
+    if (type === 'random-bg') return 'randomBg';
+    if (type === 'spine') return 'spine';
+    return 'spotlight';
+  };
+
+  const idMatch = fromId.match(/^book-(.*?)-(spotlight|spine|random-bg-spine|random_bg_spine|randombgspine|random-bg|random_bg|randombg)(?:-custom-.*)?$/i);
+  if (idMatch) {
+    return {
+      colorKey: (idMatch[1] || '').replace(/_+/g, '-'),
+      typeKey: normalizeType(idMatch[2])
+    };
+  }
+
+  const baseMatch = base.match(/^(.*?)-(spotlight|spine|random-bg-spine|random_bg_spine|randombgspine|random-bg|random_bg|randombg)(?:-custom-.*)?$/i);
+  if (baseMatch) {
+    return {
+      colorKey: (baseMatch[1] || '').replace(/_+/g, '-'),
+      typeKey: normalizeType(baseMatch[2])
+    };
+  }
+
+  const hay = `${fromId} ${String(template?.name || '').toLowerCase()} ${base}`;
+  const typeKey = hay.includes('random bg spine') || hay.includes('random-bg-spine') || hay.includes('random_bg_spine') || hay.includes('randombgspine')
+    ? 'randomBgSpine'
+    : (hay.includes('random bg') || hay.includes('random-bg') || hay.includes('random_bg') || hay.includes('randombg'))
+      ? 'randomBg'
+      : hay.includes('spine')
+        ? 'spine'
+        : 'spotlight';
+  return { colorKey: '', typeKey };
+}
+
+function findLinkedSpineTemplate(allTemplates, selectedTemplate) {
+  const selected = parseTemplateTypeAndColor(selectedTemplate);
+  const targetType = selected.typeKey === 'randomBg' ? 'randomBgSpine' : (selected.typeKey === 'spotlight' ? 'spine' : null);
+  if (!targetType || !selected.colorKey) return null;
+  return allTemplates.find(t => {
+    const meta = parseTemplateTypeAndColor(t);
+    return meta.colorKey === selected.colorKey && meta.typeKey === targetType;
+  }) || null;
+}
+
+function setSelectOptions(selectEl, options, selectedValue) {
+  if (!selectEl) return;
+  const nextHtml = options.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
+  selectEl.innerHTML = nextHtml;
+  if (selectedValue && options.some(o => o.value === selectedValue)) {
+    selectEl.value = selectedValue;
+  }
+}
+
+async function populateFrontSpineSelectors(frontId, spineId) {
+  const allTemplates = await getAllTemplates();
+  const frontOptions = [{ value: '', label: 'Select front template' }];
+  const spineOptions = [{ value: '', label: 'Select spine template' }];
+
+  allTemplates.forEach(t => {
+    if (!t?.id) return;
+    const option = { value: t.id, label: getTemplateDisplayName(t) };
+    if (getTemplateKind(t) === 'spine') {
+      spineOptions.push(option);
+    } else {
+      frontOptions.push(option);
+    }
+  });
+
+  setSelectOptions(frontTemplateSelect, frontOptions, frontId || '');
+  setSelectOptions(spineTemplateSelect, spineOptions, spineId || '');
 }
 
 function captureCurrentState() {
@@ -437,12 +733,14 @@ function restoreTemplateState(savedTemplate) {
 }
 
 /* ── template name dialog ────────────────────────────── */
-function showTemplateNameDialog() {
+function showTemplateNameDialog(options = {}) {
   return new Promise((resolve) => {
     const modal = document.getElementById('template-name-modal');
     const input = document.getElementById('template-name-input');
     const saveBtn = document.getElementById('template-name-save');
     const cancelBtn = document.getElementById('template-name-cancel');
+    const titleEl = modal ? modal.querySelector('h3') : null;
+    const descEl = modal ? modal.querySelector('p') : null;
     
     if (!modal || !input || !saveBtn || !cancelBtn) {
       console.error('Template name modal elements not found');
@@ -450,8 +748,31 @@ function showTemplateNameDialog() {
       return;
     }
     
+    const {
+      title = 'Save Template',
+      description = 'Enter a name for this template:',
+      placeholder = 'Template name',
+      saveLabel = 'Save',
+      cancelLabel = 'Cancel',
+      initialValue = '',
+      fallbackValue = `Saved Template ${new Date().toLocaleDateString()}`
+    } = options;
+
+    // Save previous modal labels so we can restore after closing
+    const prevTitle = titleEl ? titleEl.textContent : '';
+    const prevDesc = descEl ? descEl.textContent : '';
+    const prevPlaceholder = input.placeholder;
+    const prevSave = saveBtn.textContent;
+    const prevCancel = cancelBtn.textContent;
+
+    if (titleEl) titleEl.textContent = title;
+    if (descEl) descEl.textContent = description;
+    input.placeholder = placeholder;
+    saveBtn.textContent = saveLabel;
+    cancelBtn.textContent = cancelLabel;
+
     // Reset input
-    input.value = '';
+    input.value = initialValue;
     modal.style.display = 'flex';
     input.focus();
     
@@ -461,7 +782,12 @@ function showTemplateNameDialog() {
       saveBtn.removeEventListener('click', handleSave);
       cancelBtn.removeEventListener('click', handleCancel);
       input.removeEventListener('keydown', handleKeyDown);
-      resolve(name || `Saved Template ${new Date().toLocaleDateString()}`);
+      if (titleEl) titleEl.textContent = prevTitle;
+      if (descEl) descEl.textContent = prevDesc;
+      input.placeholder = prevPlaceholder;
+      saveBtn.textContent = prevSave;
+      cancelBtn.textContent = prevCancel;
+      resolve(name || fallbackValue || null);
     };
     
     const handleCancel = () => {
@@ -469,6 +795,11 @@ function showTemplateNameDialog() {
       saveBtn.removeEventListener('click', handleSave);
       cancelBtn.removeEventListener('click', handleCancel);
       input.removeEventListener('keydown', handleKeyDown);
+      if (titleEl) titleEl.textContent = prevTitle;
+      if (descEl) descEl.textContent = prevDesc;
+      input.placeholder = prevPlaceholder;
+      saveBtn.textContent = prevSave;
+      cancelBtn.textContent = prevCancel;
       resolve(null);
     };
     
@@ -573,9 +904,20 @@ function renderTemplateCard(t) {
            data-template-id="${t.id}" 
            onerror="console.error('Failed to load image for template:', '${name}', 'src:', this.src); this.style.border='2px solid red';">
       <div class="template-name">${name}</div>
+      ${!t.isUserTemplate ? `<button class="edit-template-btn" data-id="${t.id}" title="Replace template image">Edit</button>` : ''}
+      ${!t.isUserTemplate ? `<button class="delete-default-image-btn" data-id="${t.id}" title="Delete template image">×</button>` : ''}
       ${t.isUserTemplate ? `<button class="delete-template-btn" data-id="${t.id}" title="Delete template">×</button>` : ''}
     </div>
   `;
+}
+
+function renderTemplateCardWithType(t, typeLabel) {
+  const cardHtml = renderTemplateCard(t);
+  if (!typeLabel) return cardHtml;
+  return cardHtml.replace(
+    '<div class="template-name">',
+    `<div class="template-type-badge">${typeLabel}</div><div class="template-name">`
+  );
 }
 
 function setupGalleryEvents(gallery) {
@@ -607,6 +949,26 @@ function setupGalleryEvents(gallery) {
         await deleteUserTemplate(id);
         await renderGallery();
       }
+    });
+  });
+
+  // Add edit handlers for default templates
+  gallery.querySelectorAll('.edit-template-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      await replaceDefaultTemplateImage(id);
+    });
+  });
+
+  // Add delete handlers for default template images
+  gallery.querySelectorAll('.delete-default-image-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      await deleteDefaultTemplateImage(id);
     });
   });
 }
@@ -650,40 +1012,182 @@ async function renderGallery() {
   if (defaultTemplates.length > 0) {
     console.log('First template:', defaultTemplates[0]);
   }
+  defaultTemplates = await getDefaultTemplatesWithCustomizations(defaultTemplates);
+  runtimeDefaultTemplates = defaultTemplates;
   
-  // Split default templates into front vs spine groups based on filename
-  const frontTemplates = defaultTemplates.filter(t => {
-    const img = (t.image || '').toLowerCase();
-    return !img.includes('spine');
-  });
-  const spineTemplates = defaultTemplates.filter(t => {
-    const img = (t.image || '').toLowerCase();
-    return img.includes('spine');
-  });
-  
-  const frontGallery = document.getElementById('default-front-gallery');
-  const spineGallery = document.getElementById('default-spine-gallery');
+  // Group default templates into requested color sections (alphabetical)
+  const BASE_COLOR_ORDER = ['black', 'blue', 'brown', 'deep-brown', 'green', 'pink', 'purple', 'red', 'yellow'];
+  const BASE_COLOR_LABEL = {
+    'black': 'Black',
+    'blue': 'Blue',
+    'brown': 'Brown',
+    'deep-brown': 'Deep Brown',
+    'green': 'Green',
+    'pink': 'Pink',
+    'purple': 'Purple',
+    'yellow': 'Yellow',
+    'red': 'Red'
+  };
+  const TYPE_ORDER = ['spotlight', 'randomBg', 'randomBgSpine', 'spine'];
+  const TYPE_LABEL = {
+    spotlight: 'Spotlight',
+    randomBg: 'Random BG',
+    randomBgSpine: 'Random Bg Spine',
+    spine: 'Spine'
+  };
 
-  if (frontGallery) {
-    if (frontTemplates.length > 0) {
-      const html = frontTemplates.map(renderTemplateCard).join('');
-      console.log('Rendering front templates, count:', frontTemplates.length);
-      frontGallery.innerHTML = html;
-      setupGalleryEvents(frontGallery);
-    } else {
-      frontGallery.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">No front templates found.</p>';
-    }
-  }
+  const toTitle = s => s.split('-').map(w => w ? (w[0].toUpperCase() + w.slice(1)) : '').join(' ');
+  const parseTemplateFileMeta = (t) => {
+    const img = String(t.image || '').toLowerCase().replace(/\\/g, '/');
+    const file = img.split('/').pop() || '';
+    const base = file.replace(/\.[^.]+$/, '').replace(/_+/g, '-');
+    // Matches:
+    // <color>-spotlight
+    // <color>-random-bg
+    // <color>-spine
+    // and custom variants:
+    // <color>-spotlight-custom-<ts>
+    // <color>-random-bg-custom-<ts>
+    // <color>-spine-custom-<ts>
+    const m = base.match(/^(.*?)-(spotlight|spine|random-bg-spine|random_bg_spine|randombgspine|random-bg|random_bg|randombg)(?:-custom-.*)?$/i);
+    if (!m) return { colorKey: null, typeKey: null };
+    const colorKey = (m[1] || '').replace(/_+/g, '-');
+    let typeRaw = (m[2] || '').toLowerCase();
+    if (typeRaw === 'random_bg' || typeRaw === 'randombg') typeRaw = 'random-bg';
+    if (typeRaw === 'random_bg_spine' || typeRaw === 'randombgspine') typeRaw = 'random-bg-spine';
+    const typeKey = (
+      typeRaw === 'random-bg-spine' ? 'randomBgSpine' :
+      typeRaw === 'random-bg' ? 'randomBg' :
+      typeRaw === 'spine' ? 'spine' :
+      'spotlight'
+    );
+    return { colorKey: colorKey || null, typeKey };
+  };
 
-  if (spineGallery) {
-    if (spineTemplates.length > 0) {
-      const html = spineTemplates.map(renderTemplateCard).join('');
-      console.log('Rendering spine templates, count:', spineTemplates.length);
-      spineGallery.innerHTML = html;
-      setupGalleryEvents(spineGallery);
-    } else {
-      spineGallery.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">No spine templates found.</p>';
-    }
+  const getColorKey = (t) => parseTemplateFileMeta(t).colorKey;
+
+  const foundColorKeys = Array.from(new Set(defaultTemplates.map(getColorKey).filter(Boolean)));
+  const extraColorKeys = foundColorKeys.filter(k => !BASE_COLOR_ORDER.includes(k)).sort((a, b) => a.localeCompare(b));
+  const COLOR_ORDER = [...BASE_COLOR_ORDER, ...extraColorKeys];
+  const COLOR_LABEL = Object.fromEntries(COLOR_ORDER.map(k => [k, BASE_COLOR_LABEL[k] || toTitle(k)]));
+
+  const colorBuckets = Object.fromEntries(COLOR_ORDER.map(c => [c, { spotlight: [], randomBg: [], randomBgSpine: [], spine: [] }]));
+
+  const getTypeKey = (t) => {
+    const parsed = parseTemplateFileMeta(t).typeKey;
+    if (parsed) return parsed;
+    const hay = `${t.id || ''} ${t.name || ''} ${t.image || ''}`.toLowerCase();
+    if (
+      hay.includes('random bg spine') ||
+      hay.includes('random-bg-spine') ||
+      hay.includes('random_bg_spine') ||
+      hay.includes('randombgspine')
+    ) return 'randomBgSpine';
+    if (hay.includes('spine')) return 'spine';
+    if (
+      hay.includes('random bg') ||
+      hay.includes('random-bg') ||
+      hay.includes('random_bg') ||
+      hay.includes('randombg')
+    ) return 'randomBg';
+    return 'spotlight';
+  };
+
+  defaultTemplates.forEach(t => {
+    const key = getColorKey(t);
+    if (!key) return;
+    if (!colorBuckets[key]) colorBuckets[key] = { spotlight: [], randomBg: [], randomBgSpine: [], spine: [] };
+    const typeKey = getTypeKey(t);
+    colorBuckets[key][typeKey].push(t);
+  });
+
+  if (defaultColorGalleries) {
+    const firstColor = COLOR_ORDER[0];
+
+    const colorListHtml = COLOR_ORDER.map((color, idx) => {
+      const previewTemplate =
+        colorBuckets[color].spotlight[0] ||
+        colorBuckets[color].randomBg[0] ||
+        colorBuckets[color].randomBgSpine[0] ||
+        colorBuckets[color].spine[0] ||
+        null;
+      const previewSrc = previewTemplate ? (previewTemplate.image || '') : '';
+      return `
+        <button class="color-nav-item ${idx === 0 ? 'active' : ''}" data-color="${color}" type="button">
+          <img src="${previewSrc}" alt="${COLOR_LABEL[color]} preview" class="color-nav-thumb" loading="lazy">
+          <span class="color-nav-name">${COLOR_LABEL[color]}</span>
+        </button>
+      `;
+    }).join('');
+
+    const panelsHtml = COLOR_ORDER.map((color, idx) => {
+      const cardsWithType = [
+        ...colorBuckets[color].spotlight.map(t => ({ t, label: TYPE_LABEL.spotlight })),
+        ...colorBuckets[color].randomBg.map(t => ({ t, label: TYPE_LABEL.randomBg })),
+        ...colorBuckets[color].randomBgSpine.map(t => ({ t, label: TYPE_LABEL.randomBgSpine })),
+        ...colorBuckets[color].spine.map(t => ({ t, label: TYPE_LABEL.spine }))
+      ];
+      const galleryHtml = cardsWithType.length
+        ? cardsWithType.map(x => renderTemplateCardWithType(x.t, x.label)).join('')
+        : '<p style="color: var(--text-muted); padding: 0.5rem 1rem;">No templates yet.</p>';
+      return `
+        <div class="color-panel ${idx === 0 ? 'active' : ''}" data-color-panel="${color}">
+          <div class="color-panel-tools">
+            <button class="add-image-in-color-btn add-color-btn" data-color="${color}" type="button">+ Add image in this color</button>
+          </div>
+          <div class="template-gallery">${galleryHtml}</div>
+        </div>
+      `;
+    }).join('');
+
+    defaultColorGalleries.innerHTML = `
+      <div class="color-browser">
+        <div class="color-nav-tools">
+          <button id="add-new-color-btn" class="add-color-btn" type="button">+ Add new color</button>
+          <button id="delete-color-btn" class="delete-color-btn" type="button">Delete selected color</button>
+        </div>
+        <div class="color-nav">${colorListHtml}</div>
+        <div class="color-content">${panelsHtml}</div>
+      </div>
+    `;
+
+    defaultColorGalleries.querySelectorAll('.template-gallery').forEach(setupGalleryEvents);
+
+    defaultColorGalleries.querySelectorAll('.color-nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const color = btn.dataset.color;
+        defaultColorGalleries.querySelectorAll('.color-nav-item').forEach(n => n.classList.remove('active'));
+        defaultColorGalleries.querySelectorAll('.color-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        defaultColorGalleries.querySelector(`.color-panel[data-color-panel="${color}"]`)?.classList.add('active');
+        defaultColorGalleries.dataset.activeColor = color;
+        defaultColorGalleries.dataset.activeColorLabel = btn.querySelector('.color-nav-name')?.textContent || color;
+      });
+    });
+
+    defaultColorGalleries.dataset.activeColor = COLOR_ORDER[0] || '';
+    defaultColorGalleries.dataset.activeColorLabel = COLOR_LABEL[COLOR_ORDER[0]] || COLOR_ORDER[0] || '';
+
+    defaultColorGalleries.querySelector('#add-new-color-btn')?.addEventListener('click', async () => {
+      await addNewColorSet();
+    });
+    defaultColorGalleries.querySelectorAll('.add-image-in-color-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const slug = btn.dataset.color || defaultColorGalleries.dataset.activeColor || '';
+        const label = COLOR_LABEL[slug] || slug;
+        await addImageToSelectedColor(slug, label);
+      });
+    });
+    defaultColorGalleries.querySelector('#delete-color-btn')?.addEventListener('click', async () => {
+      const slug = defaultColorGalleries.dataset.activeColor || '';
+      const label = defaultColorGalleries.dataset.activeColorLabel || slug;
+      if (!slug) {
+        alert('Please select a color first.');
+        return;
+      }
+      await deleteColorSet(slug, label);
+    });
   }
   
   // Fallback to legacy gallery
@@ -733,7 +1237,11 @@ function bindEvents() {
   // Handle clicks on both galleries using event delegation
   const handleGalleryClick = async (e) => {
     // Don't trigger on delete button clicks
-    if (e.target.classList.contains('delete-template-btn')) {
+    if (
+      e.target.classList.contains('delete-template-btn') ||
+      e.target.classList.contains('edit-template-btn') ||
+      e.target.classList.contains('delete-default-image-btn')
+    ) {
       return;
     }
     
@@ -760,13 +1268,9 @@ function bindEvents() {
   }
   
   // Also add to individual galleries as backup
-  if (defaultFrontGallery) {
-    defaultFrontGallery.addEventListener('click', handleGalleryClick);
-    console.log('✅ Event listener added to defaultFrontGallery');
-  }
-  if (defaultSpineGallery) {
-    defaultSpineGallery.addEventListener('click', handleGalleryClick);
-    console.log('✅ Event listener added to defaultSpineGallery');
+  if (defaultColorGalleries) {
+    defaultColorGalleries.addEventListener('click', handleGalleryClick);
+    console.log('✅ Event listener added to defaultColorGalleries');
   }
   if (savedTemplateGallery) {
     savedTemplateGallery.addEventListener('click', handleGalleryClick);
@@ -782,6 +1286,16 @@ function bindEvents() {
     editorSection.classList.add('hidden');
     gallerySection.classList.remove('hidden');
     currentTemplate = null;
+  });
+
+  frontTemplateSelect?.addEventListener('change', async () => {
+    if (!frontTemplateSelect.value) return;
+    await selectTemplate(frontTemplateSelect.value, { keepCurrentTextState: true, source: 'front-select' });
+  });
+
+  spineTemplateSelect?.addEventListener('change', async () => {
+    if (!spineTemplateSelect.value) return;
+    await selectTemplate(spineTemplateSelect.value, { keepCurrentTextState: true, source: 'spine-select' });
   });
 
   ['title', 'author', 'spine-title', 'spine-author'].forEach(type => {
@@ -1277,14 +1791,18 @@ function endPointer() {
 
 /* ── template selection ──────────────────────────────── */
 
-async function selectTemplate(id) {
+async function selectTemplate(id, options = {}) {
+  const source = options.source || 'gallery';
+  const keepCurrentTextState = Boolean(options.keepCurrentTextState);
   console.log('selectTemplate called with id:', id);
   
   // Get all templates - combine default and saved
   let allTemplates = [];
   try {
     // Get default templates
-    if (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) {
+    if (runtimeDefaultTemplates && runtimeDefaultTemplates.length) {
+      allTemplates = [...runtimeDefaultTemplates];
+    } else if (typeof TEMPLATES !== 'undefined' && Array.isArray(TEMPLATES)) {
       allTemplates = [...TEMPLATES];
     } else if (typeof window !== 'undefined' && window.TEMPLATES && Array.isArray(window.TEMPLATES)) {
       allTemplates = [...window.TEMPLATES];
@@ -1311,51 +1829,66 @@ async function selectTemplate(id) {
   templateImage   = new Image();
 
   templateImage.onload = () => {
-    document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
-    document.querySelector(`[data-id="${id}"]`)?.classList.add('selected');
-    gallerySection.classList.add('hidden');
-    editorSection.classList.remove('hidden');
-    
-    // Reset zoom when selecting a new template
-    resetZoom();
+    const isSpineSource = source === 'spine-select';
 
-    if (template.isUserTemplate && template.blocks) {
-      // User template: restore all saved settings
-      titleState       = template.blocks.title?.state       || null;
-      authorState      = template.blocks.author?.state      || null;
-      spineTitleState  = template.blocks.spineTitle?.state  || null;
-      spineAuthorState = template.blocks.spineAuthor?.state || null;
-      restoreTemplateState(template);
+    if (!keepCurrentTextState) {
+      document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+      document.querySelector(`[data-id="${id}"]`)?.classList.add('selected');
+      gallerySection.classList.add('hidden');
+      editorSection.classList.remove('hidden');
+      // Reset zoom when selecting a new template from gallery
+      resetZoom();
+
+      if (template.isUserTemplate && template.blocks) {
+        // User template: restore all saved settings
+        titleState       = template.blocks.title?.state       || null;
+        authorState      = template.blocks.author?.state      || null;
+        spineTitleState  = template.blocks.spineTitle?.state  || null;
+        spineAuthorState = template.blocks.spineAuthor?.state || null;
+        restoreTemplateState(template);
+      } else {
+        // System template: use default regions
+        const r = template.regions;
+        const defTiltX = template.tiltX ?? -3, defTiltY = template.tiltY ?? -12;
+        const spTiltX = -5, spTiltY = -15;
+
+        titleState       = { left: r.title.left, top: r.title.top, width: r.title.width, height: r.title.height, fontSize: 36, tiltX: defTiltX, tiltY: defTiltY };
+        authorState      = { left: r.author.left, top: r.author.top, width: r.author.width, height: r.author.height, fontSize: 24, tiltX: defTiltX, tiltY: defTiltY };
+        spineTitleState  = r.spineTitle  ? { left: r.spineTitle.left, top: r.spineTitle.top, width: r.spineTitle.width, height: r.spineTitle.height, fontSize: 14, tiltX: spTiltX, tiltY: spTiltY } : null;
+        spineAuthorState = r.spineAuthor ? { left: r.spineAuthor.left, top: r.spineAuthor.top, width: r.spineAuthor.width, height: r.spineAuthor.height, fontSize: 10, tiltX: spTiltX, tiltY: spTiltY } : null;
+
+        resetControls('title',       { text:'', size:36, tiltX:defTiltX, tiltY:defTiltY });
+        resetControls('author',      { text:'', size:24, tiltX:defTiltX, tiltY:defTiltY });
+        resetControls('spineTitle',  { text:'', size:14, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+        resetControls('spineAuthor', { text:'', size:10, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+      }
     } else {
-      // System template: use default regions
-      const r = template.regions;
-      const defTiltX = template.tiltX ?? -3, defTiltY = template.tiltY ?? -12;
-      const spTiltX = -5, spTiltY = -15;
-
-      titleState       = { left: r.title.left, top: r.title.top, width: r.title.width, height: r.title.height, fontSize: 36, tiltX: defTiltX, tiltY: defTiltY };
-      authorState      = { left: r.author.left, top: r.author.top, width: r.author.width, height: r.author.height, fontSize: 24, tiltX: defTiltX, tiltY: defTiltY };
-      spineTitleState  = r.spineTitle  ? { left: r.spineTitle.left, top: r.spineTitle.top, width: r.spineTitle.width, height: r.spineTitle.height, fontSize: 14, tiltX: spTiltX, tiltY: spTiltY } : null;
-      spineAuthorState = r.spineAuthor ? { left: r.spineAuthor.left, top: r.spineAuthor.top, width: r.spineAuthor.width, height: r.spineAuthor.height, fontSize: 10, tiltX: spTiltX, tiltY: spTiltY } : null;
-
-      resetControls('title',       { text:'', size:36, tiltX:defTiltX, tiltY:defTiltY });
-      resetControls('author',      { text:'', size:24, tiltX:defTiltX, tiltY:defTiltY });
-      resetControls('spineTitle',  { text:'', size:14, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
-      resetControls('spineAuthor', { text:'', size:10, tiltX:spTiltX, tiltY:spTiltY, curve:8 });
+      gallerySection.classList.add('hidden');
+      editorSection.classList.remove('hidden');
     }
 
-    // For user templates, prefer stored frontImage; fall back to image (thumbnail)
-    if (template.isUserTemplate && template.frontImage) {
-      previewImage.src = template.frontImage;
-    } else {
-      previewImage.src = template.image;
+    let chosenFrontId = !isSpineSource ? template.id : (frontTemplateSelect?.value || '');
+    let chosenSpineId = isSpineSource ? template.id : (spineTemplateSelect?.value || '');
+
+    // Auto-link front -> spine pair when selecting from gallery cards:
+    // Spotlight -> Spine, Random BG -> Random Bg Spine
+    if (source === 'gallery' && !isSpineSource) {
+      const linkedSpine = findLinkedSpineTemplate(allTemplates, template);
+      if (linkedSpine?.id) chosenSpineId = linkedSpine.id;
     }
 
-    // Also show matching spine-only image (if available) below the main preview
+    const chosenFront = allTemplates.find(t => t.id === chosenFrontId) || template;
+    const chosenSpine = allTemplates.find(t => t.id === chosenSpineId) || null;
+
+    const frontImageSrc = (chosenFront.isUserTemplate && chosenFront.frontImage) ? chosenFront.frontImage : chosenFront.image;
+    if (frontImageSrc) previewImage.src = frontImageSrc;
+
     if (spinePreviewImage) {
-      // For user templates, use stored spineImage if present
-      if (template.isUserTemplate && template.spineImage) {
-        spinePreviewImage.src = template.spineImage;
-        spinePreviewImage.parentElement.style.display = '';
+      let spineImageSrc = '';
+      if (chosenSpine && chosenSpine.image) {
+        spineImageSrc = (chosenSpine.isUserTemplate && chosenSpine.spineImage) ? chosenSpine.spineImage : chosenSpine.image;
+      } else if (template.isUserTemplate && template.spineImage) {
+        spineImageSrc = template.spineImage;
       } else {
         const baseId = template.id.replace(/-spine$/, '');
         const spineIdCandidates = [
@@ -1365,15 +1898,22 @@ async function selectTemplate(id) {
         const matchingSpine = allTemplates.find(t => spineIdCandidates.includes(t.id)) ||
           allTemplates.find(t => (t.image || '').toLowerCase().includes('spine') &&
             (t.name || '').split(' ')[0] === (template.name || '').split(' ')[0]);
-        if (matchingSpine && matchingSpine.image) {
-          spinePreviewImage.src = matchingSpine.image;
-          spinePreviewImage.parentElement.style.display = '';
-        } else {
-          spinePreviewImage.src = '';
-          spinePreviewImage.parentElement.style.display = 'none';
-        }
+        spineImageSrc = matchingSpine?.image || '';
+      }
+
+      if (spineImageSrc) {
+        spinePreviewImage.src = spineImageSrc;
+        spinePreviewImage.parentElement.style.display = '';
+      } else {
+        spinePreviewImage.src = '';
+        spinePreviewImage.parentElement.style.display = 'none';
       }
     }
+
+    populateFrontSpineSelectors(
+      chosenFrontId || template.id,
+      chosenSpineId || ''
+    );
     updateOverlays();
   };
 

@@ -21,10 +21,7 @@
       <h2>Choose a template</h2>
       <div id="default-templates-section">
         <h3 class="section-title">Default Templates</h3>
-        <h4 class="section-subtitle">Front</h4>
-        <div id="default-front-gallery" class="template-gallery"></div>
-        <h4 class="section-subtitle">Spine</h4>
-        <div id="default-spine-gallery" class="template-gallery"></div>
+        <div id="default-color-galleries"></div>
       </div>
       <div id="saved-templates-section">
         <h3 class="section-title">My Saved Templates</h3>
@@ -91,6 +88,21 @@
         <aside class="controls-panel">
           <div id="text-controls" class="text-controls">
             <h3>Text Customization</h3>
+            <div class="control-section template-selectors">
+              <h4>Template Selection</h4>
+              <div class="control-group">
+                <label for="front-template-select">Front template</label>
+                <select id="front-template-select">
+                  <option value="">Select front template</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label for="spine-template-select">Spine template</label>
+                <select id="spine-template-select">
+                  <option value="">Select spine template</option>
+                </select>
+              </div>
+            </div>
 
             <!-- ═══ FRONT COVER TITLE ═══ -->
             <div class="control-section">

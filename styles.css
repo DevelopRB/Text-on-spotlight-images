@@ -87,6 +87,150 @@ header p {
   letter-spacing: 0.04em;
 }
 
+.color-section {
+  margin-bottom: 1rem;
+}
+
+.color-browser {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.color-nav {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.color-nav-tools {
+  margin-bottom: 0.35rem;
+}
+
+.add-color-btn {
+  background: transparent;
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.add-color-btn:hover {
+  background: rgba(201, 162, 39, 0.12);
+}
+
+.delete-color-btn {
+  margin-left: 0.5rem;
+  background: transparent;
+  color: #e07a7a;
+  border: 1px solid #a04f4f;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.delete-color-btn:hover {
+  background: rgba(180, 70, 70, 0.12);
+}
+
+.color-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 0.45rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.color-nav-item:hover,
+.color-nav-item.active {
+  border-color: var(--accent-gold);
+}
+
+.color-nav-thumb {
+  width: 24px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.color-nav-name {
+  font-size: 0.78rem;
+}
+
+.color-content {
+  min-width: 0;
+}
+
+.color-panel {
+  display: none;
+}
+
+.color-panel.active {
+  display: block;
+}
+
+.color-panel-tools {
+  margin: 0.1rem 0 0.5rem;
+}
+
+/* Default color-section previews: horizontal and compact */
+#default-color-galleries .template-gallery {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.8rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2rem 0 0.45rem;
+}
+
+#default-color-galleries .template-card {
+  min-width: 128px;
+  width: 128px;
+}
+
+#default-color-galleries .template-card img {
+  height: 164px;
+}
+
+#default-color-galleries .template-card .template-name {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.78rem;
+  min-height: 2rem;
+}
+
+/* Hide book names in default template browser */
+#default-color-galleries .template-card .template-name {
+  display: none;
+}
+
+.template-type-badge {
+  position: absolute;
+  left: 0.35rem;
+  bottom: 0.35rem;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--accent-gold);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 0.62rem;
+  padding: 0.1rem 0.3rem;
+  z-index: 2;
+}
+
 .no-templates-message {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -188,6 +332,57 @@ header p {
 
 .template-card:hover .delete-template-btn {
   opacity: 1;
+}
+
+.edit-template-btn {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  height: 24px;
+  padding: 0 0.45rem;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--accent-gold);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 10;
+}
+
+.template-card:hover .edit-template-btn {
+  opacity: 1;
+}
+
+.edit-template-btn:hover {
+  background: rgba(35, 32, 30, 0.95);
+}
+
+.delete-default-image-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 24px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 10;
+}
+
+.template-card:hover .delete-default-image-btn {
+  opacity: 1;
+}
+
+.delete-default-image-btn:hover {
+  background: rgba(200, 0, 0, 0.9);
 }
 
 .delete-template-btn:hover {
@@ -501,6 +696,13 @@ header p {
   color: var(--accent-gold);
   margin-bottom: 0.5rem;
   letter-spacing: 0.05em;
+}
+
+.template-selectors {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem;
+  margin-bottom: 1rem;
 }
 
 .control-group {
